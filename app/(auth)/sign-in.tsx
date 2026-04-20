@@ -18,6 +18,7 @@ export default function SignInScreen() {
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,7 +45,7 @@ export default function SignInScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* Logo */}
-        <View style={{ alignItems: 'center', marginBottom: 40 }}>
+        <View style={{ alignItems: 'center', marginBottom: 32 }}>
           <Text style={{ fontSize: 32, fontWeight: '800', color: colors.textPrimary }}>
             Feeld<Text style={{ color: colors.teal }}>Guide</Text>
           </Text>
@@ -53,7 +54,6 @@ export default function SignInScreen() {
           </Text>
         </View>
 
-        {/* Form */}
         <View style={{
           backgroundColor: colors.card,
           borderRadius: 16,
@@ -61,12 +61,22 @@ export default function SignInScreen() {
           borderWidth: 1,
           borderColor: colors.border,
         }}>
-          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: 20 }}>
-            Sign In
-          </Text>
+          {/* New user link */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+            <Text style={{ fontSize: 13, color: colors.textMuted }}>
+              New to FeeldGuide?{' '}
+            </Text>
+            <Text
+              style={{ fontSize: 13, color: colors.teal, fontWeight: '600', textDecorationLine: 'underline' }}
+              onPress={() => router.push('/(auth)/sign-up')}
+            >
+              Get started
+            </Text>
+          </View>
 
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, marginBottom: 6 }}>
-            Email address
+          {/* Email */}
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Email
           </Text>
           <TextInput
             value={email}
@@ -78,43 +88,46 @@ export default function SignInScreen() {
             autoCorrect={false}
             style={{
               backgroundColor: colors.background,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 10,
-              padding: 14,
-              fontSize: 15,
-              color: colors.textPrimary,
-              marginBottom: 16,
+              borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+              padding: 14, fontSize: 15, color: colors.textPrimary, marginBottom: 16,
             }}
           />
 
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, marginBottom: 6 }}>
+          {/* Password */}
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Password
           </Text>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Your password"
-            placeholderTextColor={colors.textMuted}
-            secureTextEntry
-            style={{
-              backgroundColor: colors.background,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 10,
-              padding: 14,
-              fontSize: 15,
-              color: colors.textPrimary,
-              marginBottom: 8,
-            }}
-          />
+          <View style={{ position: 'relative', marginBottom: 8 }}>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Your password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry={!showPassword}
+              style={{
+                backgroundColor: colors.background,
+                borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+                padding: 14, paddingRight: 48, fontSize: 15, color: colors.textPrimary,
+              }}
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              style={{ position: 'absolute', right: 14, top: 14 }}
+            >
+              <Text style={{ fontSize: 13, color: colors.textMuted }}>
+                {showPassword ? 'Hide' : 'Show'}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
+          {/* Error */}
           {error && (
             <Text style={{ color: colors.destructive, fontSize: 13, marginBottom: 12 }}>
               {error}
             </Text>
           )}
 
+          {/* Sign In button */}
           <TouchableOpacity
             onPress={handleSignIn}
             disabled={loading || !email.trim() || !password}
@@ -135,19 +148,13 @@ export default function SignInScreen() {
               </Text>
             )}
           </TouchableOpacity>
-        </View>
 
-        {/* Sign up link */}
-        <View style={{ alignItems: 'center', marginTop: 24 }}>
-          <Text style={{ fontSize: 13, color: colors.textMuted }}>
-            New to FeeldGuide?{' '}
-            <Text
-              style={{ color: colors.teal, fontWeight: '600' }}
-              onPress={() => router.push('/(auth)/sign-up')}
-            >
-              Get started
+          {/* Forgot password */}
+          <TouchableOpacity style={{ alignItems: 'center', marginTop: 16 }}>
+            <Text style={{ fontSize: 13, color: colors.teal, fontWeight: '500' }}>
+              Forgot password?
             </Text>
-          </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
