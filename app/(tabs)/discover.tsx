@@ -146,6 +146,9 @@ export default function DiscoverScreen() {
   }
 
   const handleClinicianTap = (item: Clinician) => {
+    router.push(`/clinician?userId=${item.id}` as any)
+    return
+    // Below code kept for reference but no longer used
     const status = connectionMap.get(item.id) ?? 'none'
     const isSelf = item.id === user?.id
 
