@@ -308,25 +308,10 @@ export default function BoardPostDetailScreen() {
                 </Text>
               </View>
 
-              <TextInput
+              <MultilineInput
                 value={responseText}
                 onChangeText={setResponseText}
                 placeholder="Describe your availability, experience, and why you'd be a good fit..."
-                placeholderTextColor={colors.textMuted}
-                multiline={1 as any}
-                numberOfLines={4}
-                style={{
-                  backgroundColor: colors.background,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  borderRadius: 10,
-                  padding: 14,
-                  fontSize: 14,
-                  color: colors.textPrimary,
-                  minHeight: 100,
-                  textAlignVertical: 'top',
-                  marginBottom: 12,
-                }}
               />
 
               {/* PHI Checkbox */}
@@ -377,5 +362,31 @@ export default function BoardPostDetailScreen() {
         ) : null}
       </ScrollView>
     </SafeAreaView>
+  )
+}
+
+// Wrapper to safely pass multiline boolean to TextInput in New Architecture
+function MultilineInput({ value, onChangeText, placeholder }: { value: string; onChangeText: (t: string) => void; placeholder: string }) {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      placeholderTextColor={colors.textMuted}
+      {...{ multiline: true }}
+      numberOfLines={4}
+      style={{
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 10,
+        padding: 14,
+        fontSize: 14,
+        color: colors.textPrimary,
+        minHeight: 100,
+        textAlignVertical: 'top',
+        marginBottom: 12,
+      }}
+    />
   )
 }
