@@ -115,14 +115,14 @@ export default function ReferralsScreen() {
   const fetchConnections = useCallback(async () => {
     if (!user) return
     const { data: connData } = await supabase
-      .from('fg_connections')
-      .select('id, requester_id, recipient_id')
-      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
+      .from('fg_partnerships')
+      .select('id, requesting_id, receiving_id')
+      .or(`requesting_id.eq.${user.id},receiving_id.eq.${user.id}`)
       .eq('status', 'accepted')
 
     if (connData && connData.length > 0) {
       const otherIds = connData.map(c =>
-        c.requester_id === user.id ? c.recipient_id : c.requester_id
+        c.requesting_id === user.id ? c.receiving_id : c.requesting_id
       )
       const { data: profiles } = await supabase
         .from('fg_profiles')

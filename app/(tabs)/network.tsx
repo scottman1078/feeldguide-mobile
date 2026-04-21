@@ -45,14 +45,14 @@ export default function NetworkScreen() {
 
     // Fetch accepted connections
     const { data: connData } = await supabase
-      .from('fg_connections')
-      .select('id, requester_id, recipient_id')
-      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
+      .from('fg_partnerships')
+      .select('id, requesting_id, receiving_id')
+      .or(`requesting_id.eq.${user.id},receiving_id.eq.${user.id}`)
       .eq('status', 'accepted')
 
     if (connData && connData.length > 0) {
       const otherIds = connData.map(c =>
-        c.requester_id === user.id ? c.recipient_id : c.requester_id
+        c.requesting_id === user.id ? c.receiving_id : c.requesting_id
       )
 
       const { data: profiles } = await supabase
@@ -64,7 +64,7 @@ export default function NetworkScreen() {
 
       const mapped: Connection[] = connData
         .map(c => {
-          const otherId = c.requester_id === user.id ? c.recipient_id : c.requester_id
+          const otherId = c.requesting_id === user.id ? c.receiving_id : c.requesting_id
           const prof = profileMap.get(otherId)
           if (!prof) return null
           return { id: c.id, otherProfile: prof }
@@ -78,13 +78,13 @@ export default function NetworkScreen() {
 
     // Fetch pending incoming requests with profiles
     const { data: pendingData } = await supabase
-      .from('fg_connections')
-      .select('id, requester_id')
-      .eq('recipient_id', user.id)
+      .from('fg_partnerships')
+      .select('id, requesting_id')
+      .eq('receiving_id', user.id)
       .eq('status', 'pending')
 
     if (pendingData && pendingData.length > 0) {
-      const requesterIds = pendingData.map(p => p.requester_id)
+      const requesterIds = pendingData.map(p => p.requesting_id)
       const { data: profiles } = await supabase
         .from('fg_profiles')
         .select('id, full_name, license_type, location_city, location_state')
@@ -94,7 +94,7 @@ export default function NetworkScreen() {
 
       const mapped: PendingRequest[] = pendingData
         .map(p => {
-          const prof = profileMap.get(p.requester_id)
+          const prof = profileMap.get(p.requesting_id)
           if (!prof) return null
           return { id: p.id, requesterProfile: prof }
         })
@@ -114,7 +114,7 @@ export default function NetworkScreen() {
 
   const handleAccept = async (connectionId: string) => {
     setActionLoading(connectionId)
-    await supabase.from('fg_connections').update({ status: 'accepted' }).eq('id', connectionId)
+    await supabase.from('fg_partnerships').update({ status: 'accepted' }).eq('id', connectionId)
     await fetchConnections()
     setActionLoading(null)
   }
@@ -127,7 +127,7 @@ export default function NetworkScreen() {
         style: 'destructive',
         onPress: async () => {
           setActionLoading(connectionId)
-          await supabase.from('fg_connections').update({ status: 'declined' }).eq('id', connectionId)
+          await supabase.from('fg_partnerships').update({ status: 'declined' }).eq('id', connectionId)
           await fetchConnections()
           setActionLoading(null)
         },

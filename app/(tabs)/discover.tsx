@@ -57,18 +57,18 @@ export default function DiscoverScreen() {
   const fetchConnectionStatuses = useCallback(async () => {
     if (!user) return
     const { data } = await supabase
-      .from('fg_connections')
-      .select('id, requester_id, recipient_id, status')
-      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
+      .from('fg_partnerships')
+      .select('id, requesting_id, receiving_id, status')
+      .or(`requesting_id.eq.${user.id},receiving_id.eq.${user.id}`)
 
     const map = new Map<string, ConnectionStatus>()
     if (data) {
       for (const conn of data) {
-        const otherId = conn.requester_id === user.id ? conn.recipient_id : conn.requester_id
+        const otherId = conn.requesting_id === user.id ? conn.receiving_id : conn.requesting_id
         if (conn.status === 'accepted') {
           map.set(otherId, 'accepted')
         } else if (conn.status === 'pending') {
-          map.set(otherId, conn.requester_id === user.id ? 'pending_sent' : 'pending_received')
+          map.set(otherId, conn.requesting_id === user.id ? 'pending_sent' : 'pending_received')
         }
       }
     }
@@ -125,9 +125,9 @@ export default function DiscoverScreen() {
     if (!user) return
     setConnectingId(clinicianId)
 
-    const { error } = await supabase.from('fg_connections').insert({
-      requester_id: user.id,
-      recipient_id: clinicianId,
+    const { error } = await supabase.from('fg_partnerships').insert({
+      requesting_id: user.id,
+      receiving_id: clinicianId,
       status: 'pending',
     })
 
