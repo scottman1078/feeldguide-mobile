@@ -380,10 +380,10 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
-        {/* Edit on Web */}
+        {/* Edit Profile */}
         <View style={{ paddingHorizontal: 20, marginTop: 8, marginBottom: 16 }}>
           <TouchableOpacity
-            onPress={() => Linking.openURL('https://feeldguide.com/dashboard/settings')}
+            onPress={() => router.push('/settings' as any)}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -395,9 +395,8 @@ export default function ProfileScreen() {
               width: '100%',
             }}
           >
-            <ExternalLink size={18} color={colors.white} />
-            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.white, marginLeft: 10 }}>
-              Edit Profile on Web
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.white }}>
+              Edit Profile
             </Text>
           </TouchableOpacity>
         </View>
