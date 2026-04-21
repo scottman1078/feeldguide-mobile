@@ -1,6 +1,6 @@
-import { View, Text, TouchableOpacity, ScrollView, Linking, ActivityIndicator, Image } from 'react-native'
+import { View, Text, TouchableOpacity, ScrollView, Linking, ActivityIndicator, Image, Share, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { ArrowLeft, ExternalLink, CheckCircle, XCircle } from 'lucide-react-native'
+import { ArrowLeft, CheckCircle, XCircle, Share2, Copy, MessageSquare, Mail } from 'lucide-react-native'
 import { colors } from '../src/lib/colors'
 import { useAuth } from '../src/contexts/auth-context'
 import { supabase } from '../src/lib/supabase'
@@ -131,6 +131,40 @@ export default function ProfileScreen() {
   const location = [p?.location_city, p?.location_state].filter(Boolean).join(', ')
   const hasRates = p?.session_rate_min != null || p?.session_rate_max != null
 
+  const profileSlug = (p?.full_name || 'unknown')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+  const profileUrl = `https://feeldguide.com/p/${profileSlug}`
+  const shareMessage = `Check out my FeeldGuide profile: ${profileUrl}`
+
+  const handleShare = async () => {
+    try {
+      await Share.share({ message: shareMessage, title: 'My FeeldGuide Profile' })
+    } catch {
+      // user cancelled
+    }
+  }
+
+  const handleCopyLink = () => {
+    // React Native doesn't have Clipboard in core anymore, use Alert as fallback
+    Alert.alert('Profile Link', profileUrl, [
+      { text: 'Share Instead', onPress: handleShare },
+      { text: 'OK' },
+    ])
+  }
+
+  const handleText = () => {
+    const smsBody = encodeURIComponent(shareMessage)
+    Linking.openURL(`sms:&body=${smsBody}`)
+  }
+
+  const handleEmail = () => {
+    const subject = encodeURIComponent('My FeeldGuide Profile')
+    const body = encodeURIComponent(shareMessage)
+    Linking.openURL(`mailto:?subject=${subject}&body=${body}`)
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
@@ -213,6 +247,31 @@ export default function ProfileScreen() {
                 Trust: {p?.trust_score ?? 0}
               </Text>
             </View>
+          </View>
+
+          {/* Share Row */}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, width: '100%' }}>
+            {[
+              { label: 'Share', Icon: Share2, onPress: handleShare, bg: colors.tealLight, fg: colors.teal },
+              { label: 'Copy', Icon: Copy, onPress: handleCopyLink, bg: '#fef3c7', fg: '#d97706' },
+              { label: 'Text', Icon: MessageSquare, onPress: handleText, bg: '#dcfce7', fg: '#16a34a' },
+              { label: 'Email', Icon: Mail, onPress: handleEmail, bg: '#dbeafe', fg: '#2563eb' },
+            ].map(({ label, Icon, onPress, bg, fg }) => (
+              <TouchableOpacity
+                key={label}
+                onPress={onPress}
+                style={{
+                  flex: 1,
+                  alignItems: 'center',
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  backgroundColor: bg,
+                }}
+              >
+                <Icon size={22} color={fg} />
+                <Text style={{ fontSize: 11, fontWeight: '600', color: fg, marginTop: 6 }}>{label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -380,23 +439,11 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
-        {/* Edit Profile */}
-        <View style={{ paddingHorizontal: 20, marginTop: 8, marginBottom: 16 }}>
-          <TouchableOpacity
-            onPress={() => router.push('/settings' as any)}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.teal,
-              borderRadius: 14,
-              paddingVertical: 16,
-              paddingHorizontal: 24,
-              width: '100%',
-            }}
-          >
-            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.white }}>
-              Edit Profile
+        {/* Edit in Settings link */}
+        <View style={{ paddingHorizontal: 20, marginTop: 12, marginBottom: 16, alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => router.push('/settings' as any)}>
+            <Text style={{ fontSize: 13, color: colors.textMuted, textDecorationLine: 'underline' }}>
+              Edit in Settings
             </Text>
           </TouchableOpacity>
         </View>

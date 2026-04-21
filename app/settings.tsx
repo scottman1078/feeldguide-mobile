@@ -371,6 +371,48 @@ export default function SettingsScreen() {
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
 
+        {/* ==================== PROFILE PREVIEW CARD ==================== */}
+        <View style={{ marginTop: 20, marginBottom: 8 }}>
+          <View style={cardStyle}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              {profile?.avatar_url ? (
+                <Image
+                  source={{ uri: profile.avatar_url }}
+                  style={{ width: 52, height: 52, borderRadius: 26 }}
+                />
+              ) : (
+                <View style={{
+                  width: 52, height: 52, borderRadius: 26,
+                  backgroundColor: colors.tealLight,
+                  justifyContent: 'center', alignItems: 'center',
+                }}>
+                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.teal }}>
+                    {fullName ? getInitials(fullName) : '?'}
+                  </Text>
+                </View>
+              )}
+              <View style={{ marginLeft: 14, flex: 1 }}>
+                <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary }}>
+                  {fullName || 'Your Name'}
+                </Text>
+                {licenseType ? (
+                  <Text style={{ fontSize: 13, color: colors.teal, fontWeight: '600', marginTop: 2 }}>
+                    {licenseType}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+              This is how others see your profile
+            </Text>
+            <TouchableOpacity onPress={() => router.push('/profile' as any)}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.teal }}>
+                View Public Profile {'\u2192'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* ==================== PROFILE SECTION ==================== */}
         <SectionLabel text="Profile" />
         <View style={cardStyle}>
