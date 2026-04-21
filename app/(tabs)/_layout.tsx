@@ -1,15 +1,15 @@
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { View, Text, TouchableOpacity } from 'react-native'
-import { Search, Send, Store, Users, MessageSquare } from 'lucide-react-native'
+import { Search, Send, Users, MessageSquare, MoreHorizontal } from 'lucide-react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors } from '../../src/lib/colors'
 
 const tabs = [
   { name: 'discover', label: 'Discover', Icon: Search },
-  { name: 'referrals', label: 'Referrals', Icon: Send },
-  { name: 'board', label: 'Board', Icon: Store },
   { name: 'network', label: 'Network', Icon: Users },
+  { name: 'referrals', label: 'Referrals', Icon: Send },
   { name: 'messages', label: 'Messages', Icon: MessageSquare },
+  { name: 'more', label: 'More', Icon: MoreHorizontal },
 ]
 
 export default function TabLayout() {
