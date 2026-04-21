@@ -43,16 +43,14 @@ export default function SignInScreen() {
     setError(null)
 
     try {
-      // Check if phone exists in database first
-      const digits = phone.replace(/\D/g, '')
-      const { data: profile } = await supabase
-        .from('fg_profiles')
-        .select('id')
-        .or(`phone.ilike.%${digits}%`)
-        .limit(1)
-        .maybeSingle()
-
-      if (!profile) {
+      // Check if phone exists via server API (can't query directly - not authenticated yet)
+      const checkRes = await fetch(`${API_BASE}/api/auth/phone-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, checkOnly: 1 }),
+      })
+      const checkData = await checkRes.json()
+      if (checkData.error) {
         setError('No account found with this phone number. Please sign up first.')
         return
       }
