@@ -20,6 +20,7 @@ export default function MoreScreen() {
   const handlePress = async (item: typeof menuItems[number]) => {
     if ('action' in item && item.action === 'signout') {
       await signOut()
+      router.replace('/(auth)/sign-up')
       return
     }
     if ('url' in item && item.url) {
