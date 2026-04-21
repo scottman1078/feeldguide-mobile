@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView, Linking } from 'react-native'
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native'
 import { User, Settings, UserPlus, HelpCircle, LogOut, ChevronRight } from 'lucide-react-native'
 import { colors } from '../../src/lib/colors'
 import { useAuth } from '../../src/contexts/auth-context'
@@ -9,7 +9,7 @@ const menuItems = [
   { key: 'profile', label: 'My Profile', Icon: User, route: '/profile' },
   { key: 'settings', label: 'Settings', Icon: Settings, route: '/settings' },
   { key: 'invite', label: 'Invite Colleagues', Icon: UserPlus, route: '/invite' },
-  { key: 'help', label: 'Help Center', Icon: HelpCircle, route: null, url: 'https://feeldguide.com/dashboard/help' },
+  { key: 'help', label: 'Help Center', Icon: HelpCircle, route: '/help' },
   { key: 'signout', label: 'Sign Out', Icon: LogOut, route: null, action: 'signout' },
 ] as const
 
@@ -21,10 +21,6 @@ export default function MoreScreen() {
     if ('action' in item && item.action === 'signout') {
       await signOut()
       router.replace('/(auth)/sign-up')
-      return
-    }
-    if ('url' in item && item.url) {
-      Linking.openURL(item.url)
       return
     }
     if (item.route) {
