@@ -42,7 +42,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .select('*')
       .eq('id', userId)
       .single()
-    if (data) setProfile(data as Profile)
+    if (data) {
+      // Sanitize boolean fields - Supabase sometimes returns strings
+      const sanitized = { ...data }
+      for (const key of Object.keys(sanitized)) {
+        if (sanitized[key] === 'true') sanitized[key] = true
+        if (sanitized[key] === 'false') sanitized[key] = false
+      }
+      setProfile(sanitized as Profile)
+    }
   }
 
   useEffect(() => {

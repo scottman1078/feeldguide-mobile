@@ -6,7 +6,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false,
+        headerShown: false as any,
         tabBarActiveTintColor: colors.teal,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
@@ -19,7 +19,7 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '600',
+          fontWeight: '600' as const,
         },
       }}
     >
