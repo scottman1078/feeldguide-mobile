@@ -3,6 +3,9 @@
 ## Web Sync Rule
 **CRITICAL:** This mobile app must stay in sync with the web platform at `/Users/scottmolluso/Desktop/AIProjects/FeeldGuide`. When changes are made to the web app that affect shared features, apply equivalent changes here.
 
+## "Sync web and mobile repos" Command
+When the user says "sync web and mobile repos", perform a full audit of the web platform, identify all features/screens missing from mobile, and build them to achieve feature parity.
+
 ## Tech Stack
 - Expo SDK 54 / React Native with New Architecture
 - TypeScript
