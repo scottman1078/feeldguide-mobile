@@ -103,16 +103,21 @@ export default function SignInScreen() {
 
       // Set the session in supabase client
       if (sessionData.session) {
-        await supabase.auth.setSession({
+        const { error: sessionError } = await supabase.auth.setSession({
           access_token: sessionData.session.access_token,
           refresh_token: sessionData.session.refresh_token,
         })
+        if (sessionError) {
+          setError(`Session error: ${sessionError.message}`)
+          setLoading(false)
+          return
+        }
         router.replace('/(tabs)/discover')
       } else {
         setError('Could not sign in. Try creating an account.')
       }
-    } catch {
-      setError('Something went wrong. Please try again.')
+    } catch (err: any) {
+      setError(err?.message || 'Something went wrong. Please try again.')
     } finally {
       setLoading(false)
     }
