@@ -6,7 +6,6 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false as any,
         tabBarActiveTintColor: colors.teal,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
@@ -19,7 +18,7 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '600' as const,
+          fontWeight: '600',
         },
       }}
     >
@@ -27,6 +26,7 @@ export default function TabLayout() {
         name="discover"
         options={{
           title: 'Discover',
+          headerTitle: '',
           tabBarIcon: ({ color, size }) => <Search size={size} color={color} />,
         }}
       />
@@ -34,6 +34,7 @@ export default function TabLayout() {
         name="referrals"
         options={{
           title: 'Referrals',
+          headerTitle: '',
           tabBarIcon: ({ color, size }) => <Send size={size} color={color} />,
         }}
       />
@@ -41,6 +42,7 @@ export default function TabLayout() {
         name="board"
         options={{
           title: 'Board',
+          headerTitle: '',
           tabBarIcon: ({ color, size }) => <Store size={size} color={color} />,
         }}
       />
@@ -48,6 +50,7 @@ export default function TabLayout() {
         name="network"
         options={{
           title: 'Network',
+          headerTitle: '',
           tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
         }}
       />
@@ -55,6 +58,7 @@ export default function TabLayout() {
         name="messages"
         options={{
           title: 'Messages',
+          headerTitle: '',
           tabBarIcon: ({ color, size }) => <MessageSquare size={size} color={color} />,
         }}
       />
