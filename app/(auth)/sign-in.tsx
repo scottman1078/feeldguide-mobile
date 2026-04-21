@@ -14,6 +14,8 @@ import { supabase } from '../../src/lib/supabase'
 import { apiSendPhoneCode, apiCheckPhoneCode } from '../../src/lib/api'
 import { colors } from '../../src/lib/colors'
 
+const API_BASE = 'https://www.feeldguide.com'
+
 function formatPhone(val: string): string {
   const digits = val.replace(/\D/g, '').slice(0, 10)
   if (digits.length > 6) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
@@ -41,6 +43,20 @@ export default function SignInScreen() {
     setError(null)
 
     try {
+      // Check if phone exists in database first
+      const digits = phone.replace(/\D/g, '')
+      const { data: profile } = await supabase
+        .from('fg_profiles')
+        .select('id')
+        .or(`phone.ilike.%${digits}%`)
+        .limit(1)
+        .maybeSingle()
+
+      if (!profile) {
+        setError('No account found with this phone number. Please sign up first.')
+        return
+      }
+
       const result = await apiSendPhoneCode(phone)
       if (result.error) {
         setError(result.error)
