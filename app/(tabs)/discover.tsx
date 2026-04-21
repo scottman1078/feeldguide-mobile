@@ -525,28 +525,7 @@ export default function DiscoverScreen() {
 
             return (
               <TouchableOpacity
-                onPress={() => {
-                  const details = [
-                    `Client: ${item.client_initials || 'N/A'}`,
-                    item.urgency ? `Urgency: ${item.urgency}` : '',
-                    item.description || '',
-                    item.presenting_concerns?.length ? `\nConcerns: ${item.presenting_concerns.join(', ')}` : '',
-                    item.insurance_type ? `Insurance: ${item.insurance_type}` : '',
-                    `\nPosted by: ${item.poster_name || 'Anonymous'}`,
-                    `Date: ${new Date(item.created_at).toLocaleDateString()}`,
-                  ].filter(Boolean).join('\n')
-
-                  Alert.alert(
-                    'Referral Post',
-                    details,
-                    [
-                      { text: 'Close', style: 'cancel' },
-                      item.poster_id && item.poster_id !== user?.id
-                        ? { text: 'Message Poster', onPress: () => router.push(`/conversation?userId=${item.poster_id}&userName=${encodeURIComponent(item.poster_name || 'Clinician')}` as any) }
-                        : { text: 'OK' },
-                    ]
-                  )
-                }}
+                onPress={() => router.push(`/board-post?postId=${item.id}` as any)}
                 activeOpacity={0.7}
                 style={{
                   backgroundColor: colors.white,
