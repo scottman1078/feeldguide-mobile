@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   View,
   Text,
@@ -6,8 +6,9 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native'
-import { Search, UserPlus } from 'lucide-react-native'
+import { Search, UserPlus, UserCheck, MessageCircle } from 'lucide-react-native'
 import { supabase } from '../../src/lib/supabase'
 import { colors } from '../../src/lib/colors'
 import { useAuth } from '../../src/contexts/auth-context'
@@ -24,6 +25,7 @@ interface Clinician {
   accepting_new_clients: boolean
   telehealth_available: boolean
   trust_score: number
+  bio: string | null
 }
 
 interface BoardPost {
@@ -39,25 +41,51 @@ interface BoardPost {
   poster_name: string | null
 }
 
+type ConnectionStatus = 'none' | 'pending_sent' | 'pending_received' | 'accepted'
+
 export default function DiscoverScreen() {
-  const { profile } = useAuth()
+  const { user, profile } = useAuth()
   const router = useRouter()
   const [clinicians, setClinicians] = useState<Clinician[]>([])
   const [boardPosts, setBoardPosts] = useState<BoardPost[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'clinicians' | 'board'>('clinicians')
+  const [connectionMap, setConnectionMap] = useState<Map<string, ConnectionStatus>>(new Map())
+  const [connectingId, setConnectingId] = useState<string | null>(null)
+
+  const fetchConnectionStatuses = useCallback(async () => {
+    if (!user) return
+    const { data } = await supabase
+      .from('fg_connections')
+      .select('id, requester_id, recipient_id, status')
+      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
+
+    const map = new Map<string, ConnectionStatus>()
+    if (data) {
+      for (const conn of data) {
+        const otherId = conn.requester_id === user.id ? conn.recipient_id : conn.requester_id
+        if (conn.status === 'accepted') {
+          map.set(otherId, 'accepted')
+        } else if (conn.status === 'pending') {
+          map.set(otherId, conn.requester_id === user.id ? 'pending_sent' : 'pending_received')
+        }
+      }
+    }
+    setConnectionMap(map)
+  }, [user])
 
   useEffect(() => {
     fetchClinicians()
     fetchBoardPosts()
-  }, [])
+    fetchConnectionStatuses()
+  }, [fetchConnectionStatuses])
 
   const fetchClinicians = async () => {
     setLoading(true)
     const { data } = await supabase
       .from('fg_profiles')
-      .select('id, full_name, license_type, location_city, location_state, avatar_url, accepting_new_clients, telehealth_available, trust_score')
+      .select('id, full_name, license_type, location_city, location_state, avatar_url, accepting_new_clients, telehealth_available, trust_score, bio')
       .eq('onboarding_completed', true)
       .eq('status', 'active')
       .order('trust_score', { ascending: false })
@@ -76,7 +104,6 @@ export default function DiscoverScreen() {
       .limit(50)
 
     if (data && data.length > 0) {
-      // Fetch poster names
       const posterIds = [...new Set(data.map(p => p.posting_therapist_id))]
       const { data: profiles } = await supabase
         .from('fg_profiles')
@@ -92,6 +119,72 @@ export default function DiscoverScreen() {
     } else {
       setBoardPosts([])
     }
+  }
+
+  const handleConnect = async (clinicianId: string, clinicianName: string) => {
+    if (!user) return
+    setConnectingId(clinicianId)
+
+    const { error } = await supabase.from('fg_connections').insert({
+      requester_id: user.id,
+      recipient_id: clinicianId,
+      status: 'pending',
+    })
+
+    if (error) {
+      Alert.alert('Error', 'Could not send connection request. You may have already sent one.')
+    } else {
+      // Update local map
+      setConnectionMap(prev => {
+        const next = new Map(prev)
+        next.set(clinicianId, 'pending_sent')
+        return next
+      })
+      Alert.alert('Request Sent', `Connection request sent to ${clinicianName}.`)
+    }
+    setConnectingId(null)
+  }
+
+  const handleClinicianTap = (item: Clinician) => {
+    const status = connectionMap.get(item.id) ?? 'none'
+    const isSelf = item.id === user?.id
+
+    const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }> = []
+
+    // Build detail text
+    const details: string[] = []
+    if (item.license_type) details.push(item.license_type)
+    if (item.location_city || item.location_state) {
+      details.push([item.location_city, item.location_state].filter(Boolean).join(', '))
+    }
+    if (item.bio) details.push('\n' + item.bio)
+
+    const badges: string[] = []
+    if (item.accepting_new_clients) badges.push('Accepting New Clients')
+    if (item.telehealth_available) badges.push('Telehealth Available')
+    if (badges.length > 0) details.push('\n' + badges.join(' | '))
+
+    if (!isSelf) {
+      if (status === 'accepted') {
+        buttons.push({
+          text: 'Message',
+          onPress: () => router.push(`/messages?userId=${item.id}` as any),
+        })
+      } else if (status === 'none') {
+        buttons.push({
+          text: 'Connect',
+          onPress: () => handleConnect(item.id, item.full_name),
+        })
+      }
+    }
+
+    buttons.push({ text: 'Close', style: 'cancel' })
+
+    Alert.alert(
+      item.full_name,
+      details.join('\n') || 'Clinician',
+      buttons,
+    )
   }
 
   const filtered = clinicians.filter(c => {
@@ -118,6 +211,86 @@ export default function DiscoverScreen() {
 
   const getInitials = (name: string) => {
     return name.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+  }
+
+  const getConnectionButton = (clinicianId: string, clinicianName: string) => {
+    if (clinicianId === user?.id) return null
+
+    const status = connectionMap.get(clinicianId) ?? 'none'
+    const isConnecting = connectingId === clinicianId
+
+    if (status === 'accepted') {
+      return (
+        <TouchableOpacity
+          onPress={() => router.push(`/messages?userId=${clinicianId}` as any)}
+          style={{
+            backgroundColor: colors.tealLight,
+            borderRadius: 8,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+        >
+          <MessageCircle size={12} color={colors.teal} />
+          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal, marginLeft: 4 }}>Message</Text>
+        </TouchableOpacity>
+      )
+    }
+
+    if (status === 'pending_sent') {
+      return (
+        <View style={{
+          backgroundColor: colors.background,
+          borderRadius: 8,
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}>
+          <UserCheck size={12} color={colors.textMuted} />
+          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textMuted, marginLeft: 4 }}>Pending</Text>
+        </View>
+      )
+    }
+
+    if (status === 'pending_received') {
+      return (
+        <View style={{
+          backgroundColor: colors.amber + '15',
+          borderRadius: 8,
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+        }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.amber }}>Respond</Text>
+        </View>
+      )
+    }
+
+    return (
+      <TouchableOpacity
+        onPress={() => handleConnect(clinicianId, clinicianName)}
+        disabled={isConnecting ? true : false}
+        style={{
+          backgroundColor: colors.teal,
+          borderRadius: 8,
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+          flexDirection: 'row',
+          alignItems: 'center',
+          opacity: isConnecting ? 0.6 : 1,
+        }}
+      >
+        {isConnecting ? (
+          <ActivityIndicator size="small" color={colors.white} />
+        ) : (
+          <>
+            <UserPlus size={12} color={colors.white} />
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.white, marginLeft: 4 }}>Connect</Text>
+          </>
+        )}
+      </TouchableOpacity>
+    )
   }
 
   const InviteCTA = () => (
@@ -256,6 +429,8 @@ export default function DiscoverScreen() {
           }
           renderItem={({ item }) => (
             <TouchableOpacity
+              onPress={() => handleClinicianTap(item)}
+              activeOpacity={0.7}
               style={{
                 backgroundColor: colors.white,
                 borderRadius: 14,
@@ -284,20 +459,20 @@ export default function DiscoverScreen() {
                   <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
                     {item.full_name}
                   </Text>
-                  {item.license_type && (
+                  {item.license_type ? (
                     <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
                       {item.license_type}
                     </Text>
-                  )}
-                  {(item.location_city || item.location_state) && (
+                  ) : null}
+                  {(item.location_city || item.location_state) ? (
                     <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
                       {[item.location_city, item.location_state].filter(Boolean).join(', ')}
                     </Text>
-                  )}
+                  ) : null}
                 </View>
 
-                <View style={{ alignItems: 'flex-end' }}>
-                  {item.accepting_new_clients && (
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  {item.accepting_new_clients ? (
                     <View style={{
                       backgroundColor: '#dcfce7',
                       paddingHorizontal: 8,
@@ -306,19 +481,23 @@ export default function DiscoverScreen() {
                     }}>
                       <Text style={{ fontSize: 10, fontWeight: '600', color: '#16a34a' }}>Accepting</Text>
                     </View>
-                  )}
-                  {item.telehealth_available && (
+                  ) : null}
+                  {item.telehealth_available ? (
                     <View style={{
                       backgroundColor: '#dbeafe',
                       paddingHorizontal: 8,
                       paddingVertical: 3,
                       borderRadius: 8,
-                      marginTop: 4,
                     }}>
                       <Text style={{ fontSize: 10, fontWeight: '600', color: '#2563eb' }}>Telehealth</Text>
                     </View>
-                  )}
+                  ) : null}
                 </View>
+              </View>
+
+              {/* Connect button row */}
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 }}>
+                {getConnectionButton(item.id, item.full_name)}
               </View>
             </TouchableOpacity>
           )}

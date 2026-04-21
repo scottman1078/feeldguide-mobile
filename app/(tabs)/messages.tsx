@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native'
-import { MessageSquare } from 'lucide-react-native'
+import { MessageSquare, Plus } from 'lucide-react-native'
+import { useRouter } from 'expo-router'
 import { supabase } from '../../src/lib/supabase'
 import { colors } from '../../src/lib/colors'
 import { useAuth } from '../../src/contexts/auth-context'
@@ -17,6 +18,7 @@ interface Thread {
 
 export default function MessagesScreen() {
   const { user } = useAuth()
+  const router = useRouter()
   const [threads, setThreads] = useState<Thread[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -112,6 +114,8 @@ export default function MessagesScreen() {
 
   const renderThread = ({ item }: { item: Thread }) => (
     <TouchableOpacity
+      onPress={() => router.push(`/conversation?userId=${item.partnerId}&userName=${encodeURIComponent(item.partnerName)}` as any)}
+      activeOpacity={0.7}
       style={{
         backgroundColor: colors.white,
         borderRadius: 14,
@@ -191,6 +195,21 @@ export default function MessagesScreen() {
         <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>Direct messaging with your network</Text>
       </View>
 
+      <View style={{
+        backgroundColor: colors.amber + '18',
+        borderWidth: 1,
+        borderColor: colors.amber + '40',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginHorizontal: 20,
+        marginTop: 12,
+      }}>
+        <Text style={{ fontSize: 12, color: colors.amber, fontWeight: '600', textAlign: 'center' }}>
+          Do not include patient names or identifying information in messages.
+        </Text>
+      </View>
+
       {loading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.teal} />
@@ -199,7 +218,7 @@ export default function MessagesScreen() {
         <FlatList
           data={threads}
           keyExtractor={item => item.partnerId}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 }}
           ListEmptyComponent={
             <View style={{ alignItems: 'center', paddingTop: 60 }}>
               <MessageSquare size={48} color={colors.textMuted} style={{ opacity: 0.3 }} />
@@ -210,6 +229,29 @@ export default function MessagesScreen() {
           renderItem={renderThread}
         />
       )}
+
+      <TouchableOpacity
+        onPress={() => router.push('/conversation' as any)}
+        activeOpacity={0.8}
+        style={{
+          position: 'absolute',
+          bottom: 24,
+          right: 20,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: colors.teal,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.2,
+          shadowRadius: 8,
+          elevation: 6,
+        }}
+      >
+        <Plus size={26} color={colors.white} />
+      </TouchableOpacity>
     </View>
   )
 }

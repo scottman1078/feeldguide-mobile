@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Image, Animated } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { ArrowLeft, Camera, LogOut } from 'lucide-react-native'
+import { ArrowLeft, Camera, LogOut, X } from 'lucide-react-native'
 import { colors } from '../src/lib/colors'
 import { useAuth } from '../src/contexts/auth-context'
 import { supabase } from '../src/lib/supabase'
@@ -8,6 +8,17 @@ import { useRouter } from 'expo-router'
 import { useEffect, useState, useCallback, useRef } from 'react'
 
 const GENDER_OPTIONS = ['Female', 'Male', 'Non-binary', 'Prefer not to say']
+
+const MODALITY_OPTIONS = [
+  'CBT', 'DBT', 'EMDR', 'Psychodynamic', 'ACT', 'Motivational Interviewing',
+  'Solution-Focused', 'IFS', 'EFT', 'Somatic Experiencing', 'Play Therapy',
+  'Brainspotting', 'Neurofeedback',
+]
+
+const LANGUAGE_OPTIONS = [
+  'English', 'Spanish', 'Mandarin', 'French', 'Vietnamese', 'Korean',
+  'Arabic', 'Portuguese', 'Russian', 'Hindi', 'Tagalog', 'ASL',
+]
 
 export default function SettingsScreen() {
   const { profile, signOut, refreshProfile } = useAuth()
@@ -38,10 +49,39 @@ export default function SettingsScreen() {
   const [rateMin, setRateMin] = useState('')
   const [rateMax, setRateMax] = useState('')
 
+  // Credentials fields
+  const [licenseType, setLicenseType] = useState('')
+  const [licenseNumber, setLicenseNumber] = useState('')
+  const [licenseState, setLicenseState] = useState('')
+  const [npiNumber, setNpiNumber] = useState('')
+
+  // Treatment modalities
+  const [selectedModalities, setSelectedModalities] = useState<string[]>([])
+
+  // Insurance panels
+  const [selectedPanels, setSelectedPanels] = useState<string[]>([])
+  const [panelSearch, setPanelSearch] = useState('')
+
+  // Languages
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([])
+
+  // Notifications (client-side only)
+  const [notifEmailReferrals, setNotifEmailReferrals] = useState(1)
+  const [notifEmailConnections, setNotifEmailConnections] = useState(1)
+  const [notifEmailEndorsements, setNotifEmailEndorsements] = useState(1)
+  const [notifEmailDigest, setNotifEmailDigest] = useState(1)
+  const [notifPushReferrals, setNotifPushReferrals] = useState(1)
+  const [notifPushMessages, setNotifPushMessages] = useState(1)
+  const [notifPushConnections, setNotifPushConnections] = useState(1)
+
   // Saving states
   const [savingProfile, setSavingProfile] = useState(0)
   const [savingPractice, setSavingPractice] = useState(0)
   const [savingRates, setSavingRates] = useState(0)
+  const [savingCredentials, setSavingCredentials] = useState(0)
+  const [savingModalities, setSavingModalities] = useState(0)
+  const [savingPanels, setSavingPanels] = useState(0)
+  const [savingLanguages, setSavingLanguages] = useState(0)
 
   const showToast = useCallback((message: string) => {
     setToast(message)
@@ -57,7 +97,7 @@ export default function SettingsScreen() {
     try {
       const { data } = await supabase
         .from('fg_profiles')
-        .select('full_name, email, phone, gender, bio, practice_name, location_city, location_state, location_zip, telehealth_available, accepting_new_clients, direct_pay, sliding_scale, session_rate_min, session_rate_max')
+        .select('full_name, email, phone, gender, bio, practice_name, location_city, location_state, location_zip, telehealth_available, accepting_new_clients, direct_pay, sliding_scale, session_rate_min, session_rate_max, license_type, license_number, license_state, npi_number')
         .eq('id', profile.id)
         .single()
 
@@ -77,6 +117,37 @@ export default function SettingsScreen() {
         setSlidingScale(data.sliding_scale ? 1 : 0)
         setRateMin(data.session_rate_min != null ? String(data.session_rate_min) : '')
         setRateMax(data.session_rate_max != null ? String(data.session_rate_max) : '')
+        setLicenseType(data.license_type || '')
+        setLicenseNumber(data.license_number || '')
+        setLicenseState(data.license_state || '')
+        setNpiNumber(data.npi_number || '')
+      }
+
+      // Fetch treatment modalities
+      const { data: modData } = await supabase
+        .from('fg_treatment_modalities')
+        .select('modality')
+        .eq('profile_id', profile.id)
+      if (modData) {
+        setSelectedModalities(modData.map((m: { modality: string }) => m.modality))
+      }
+
+      // Fetch insurance panels
+      const { data: panelData } = await supabase
+        .from('fg_insurance_panels')
+        .select('panel_name')
+        .eq('profile_id', profile.id)
+      if (panelData) {
+        setSelectedPanels(panelData.map((p: { panel_name: string }) => p.panel_name))
+      }
+
+      // Fetch languages
+      const { data: langData } = await supabase
+        .from('fg_languages')
+        .select('language')
+        .eq('profile_id', profile.id)
+      if (langData) {
+        setSelectedLanguages(langData.map((l: { language: string }) => l.language))
       }
     } catch {
       // silently fail
@@ -148,6 +219,103 @@ export default function SettingsScreen() {
     } finally {
       setSavingRates(0)
     }
+  }
+
+  const saveCredentialsSection = async () => {
+    if (!profile?.id) return
+    setSavingCredentials(1)
+    try {
+      const { error } = await supabase.from('fg_profiles').update({
+        license_type: licenseType.trim() || null,
+        license_number: licenseNumber.trim() || null,
+        license_state: licenseState.trim().toUpperCase() || null,
+        npi_number: npiNumber.trim() || null,
+      }).eq('id', profile.id)
+      if (error) throw error
+      showToast('Credentials saved')
+    } catch {
+      showToast('Failed to save credentials')
+    } finally {
+      setSavingCredentials(0)
+    }
+  }
+
+  const saveModalitiesSection = async () => {
+    if (!profile?.id) return
+    setSavingModalities(1)
+    try {
+      await supabase.from('fg_treatment_modalities').delete().eq('profile_id', profile.id)
+      if (selectedModalities.length > 0) {
+        const rows = selectedModalities.map(m => ({ profile_id: profile.id, modality: m }))
+        const { error } = await supabase.from('fg_treatment_modalities').insert(rows)
+        if (error) throw error
+      }
+      showToast('Modalities saved')
+    } catch {
+      showToast('Failed to save modalities')
+    } finally {
+      setSavingModalities(0)
+    }
+  }
+
+  const savePanelsSection = async () => {
+    if (!profile?.id) return
+    setSavingPanels(1)
+    try {
+      await supabase.from('fg_insurance_panels').delete().eq('profile_id', profile.id)
+      if (selectedPanels.length > 0) {
+        const rows = selectedPanels.map(p => ({ profile_id: profile.id, panel_name: p }))
+        const { error } = await supabase.from('fg_insurance_panels').insert(rows)
+        if (error) throw error
+      }
+      showToast('Insurance panels saved')
+    } catch {
+      showToast('Failed to save insurance panels')
+    } finally {
+      setSavingPanels(0)
+    }
+  }
+
+  const saveLanguagesSection = async () => {
+    if (!profile?.id) return
+    setSavingLanguages(1)
+    try {
+      await supabase.from('fg_languages').delete().eq('profile_id', profile.id)
+      if (selectedLanguages.length > 0) {
+        const rows = selectedLanguages.map(l => ({ profile_id: profile.id, language: l }))
+        const { error } = await supabase.from('fg_languages').insert(rows)
+        if (error) throw error
+      }
+      showToast('Languages saved')
+    } catch {
+      showToast('Failed to save languages')
+    } finally {
+      setSavingLanguages(0)
+    }
+  }
+
+  const toggleModality = (mod: string) => {
+    setSelectedModalities(prev =>
+      prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod]
+    )
+  }
+
+  const toggleLanguage = (lang: string) => {
+    setSelectedLanguages(prev =>
+      prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]
+    )
+  }
+
+  const addInsurancePanel = () => {
+    const trimmed = panelSearch.trim()
+    if (trimmed && !selectedPanels.includes(trimmed)) {
+      setSelectedPanels(prev => [...prev, trimmed])
+    }
+    setPanelSearch('')
+  }
+
+  const removeInsurancePanel = (panel: string) => {
+    setSelectedPanels(prev => prev.filter(p => p !== panel))
   }
 
   const getInitials = (name: string) => {
@@ -333,6 +501,150 @@ export default function SettingsScreen() {
           </View>
 
           <SaveButton label="Save Rates" onPress={saveRatesSection} saving={savingRates} />
+        </View>
+
+        {/* ==================== CREDENTIALS SECTION ==================== */}
+        <SectionLabel text="Credentials" />
+        <View style={cardStyle}>
+          <FieldLabel text="License Type" />
+          <StyledInput value={licenseType} onChangeText={setLicenseType} placeholder="e.g. LCSW, LPC, PsyD" />
+
+          <FieldLabel text="License Number" />
+          <StyledInput value={licenseNumber} onChangeText={setLicenseNumber} placeholder="License number" />
+
+          <FieldLabel text="License State" />
+          <StyledInput value={licenseState} onChangeText={setLicenseState} placeholder="e.g. CA" autoCapitalize="characters" />
+
+          <FieldLabel text="NPI Number" />
+          <StyledInput value={npiNumber} onChangeText={setNpiNumber} placeholder="NPI number" keyboardType="number-pad" />
+
+          <SaveButton label="Save Credentials" onPress={saveCredentialsSection} saving={savingCredentials} />
+        </View>
+
+        {/* ==================== TREATMENT MODALITIES SECTION ==================== */}
+        <SectionLabel text="Treatment Modalities" />
+        <View style={cardStyle}>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+            Select the modalities you practice
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {MODALITY_OPTIONS.map(opt => (
+              <TouchableOpacity
+                key={opt}
+                onPress={() => toggleModality(opt)}
+                style={{
+                  paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                  backgroundColor: selectedModalities.includes(opt) ? colors.teal : colors.white,
+                  borderWidth: 1, borderColor: selectedModalities.includes(opt) ? colors.teal : colors.border,
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '600', color: selectedModalities.includes(opt) ? colors.white : colors.textSecondary }}>
+                  {opt}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <SaveButton label="Save Modalities" onPress={saveModalitiesSection} saving={savingModalities} />
+        </View>
+
+        {/* ==================== INSURANCE PANELS SECTION ==================== */}
+        <SectionLabel text="Insurance Panels" />
+        <View style={cardStyle}>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+            Add the insurance panels you accept
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            <View style={{ flex: 1 }}>
+              <StyledInput
+                value={panelSearch}
+                onChangeText={setPanelSearch}
+                placeholder="Type insurance name..."
+                style={{ marginBottom: 0 }}
+              />
+            </View>
+            <TouchableOpacity
+              onPress={addInsurancePanel}
+              style={{
+                backgroundColor: colors.teal,
+                borderRadius: 10,
+                paddingHorizontal: 16,
+                justifyContent: 'center',
+                alignSelf: 'stretch',
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.white }}>Add</Text>
+            </TouchableOpacity>
+          </View>
+          {selectedPanels.length > 0 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {selectedPanels.map(panel => (
+                <View
+                  key={panel}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    paddingLeft: 14, paddingRight: 8, paddingVertical: 8, borderRadius: 20,
+                    backgroundColor: colors.teal,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.white, marginRight: 6 }}>
+                    {panel}
+                  </Text>
+                  <TouchableOpacity onPress={() => removeInsurancePanel(panel)}>
+                    <X size={14} color={colors.white} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <SaveButton label="Save Insurance Panels" onPress={savePanelsSection} saving={savingPanels} />
+        </View>
+
+        {/* ==================== LANGUAGES SECTION ==================== */}
+        <SectionLabel text="Languages" />
+        <View style={cardStyle}>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+            Select the languages you speak
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {LANGUAGE_OPTIONS.map(opt => (
+              <TouchableOpacity
+                key={opt}
+                onPress={() => toggleLanguage(opt)}
+                style={{
+                  paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                  backgroundColor: selectedLanguages.includes(opt) ? colors.teal : colors.white,
+                  borderWidth: 1, borderColor: selectedLanguages.includes(opt) ? colors.teal : colors.border,
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '600', color: selectedLanguages.includes(opt) ? colors.white : colors.textSecondary }}>
+                  {opt}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <SaveButton label="Save Languages" onPress={saveLanguagesSection} saving={savingLanguages} />
+        </View>
+
+        {/* ==================== NOTIFICATIONS SECTION ==================== */}
+        <SectionLabel text="Notifications" />
+        <View style={cardStyle}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary, marginBottom: 4 }}>
+            Email Notifications
+          </Text>
+          <ToggleRow label="Referrals" value={notifEmailReferrals} onToggle={() => setNotifEmailReferrals(notifEmailReferrals ? 0 : 1)} />
+          <ToggleRow label="Connections" value={notifEmailConnections} onToggle={() => setNotifEmailConnections(notifEmailConnections ? 0 : 1)} />
+          <ToggleRow label="Endorsements" value={notifEmailEndorsements} onToggle={() => setNotifEmailEndorsements(notifEmailEndorsements ? 0 : 1)} />
+          <ToggleRow label="Weekly Digest" value={notifEmailDigest} onToggle={() => setNotifEmailDigest(notifEmailDigest ? 0 : 1)} />
+
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary, marginTop: 16, marginBottom: 4 }}>
+            Push Notifications
+          </Text>
+          <ToggleRow label="Referrals" value={notifPushReferrals} onToggle={() => setNotifPushReferrals(notifPushReferrals ? 0 : 1)} />
+          <ToggleRow label="Messages" value={notifPushMessages} onToggle={() => setNotifPushMessages(notifPushMessages ? 0 : 1)} />
+          <ToggleRow label="Connections" value={notifPushConnections} onToggle={() => setNotifPushConnections(notifPushConnections ? 0 : 1)} />
         </View>
 
         {/* ==================== ACCOUNT SECTION ==================== */}
