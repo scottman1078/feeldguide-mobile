@@ -28,12 +28,15 @@ interface Clinician {
 
 interface BoardPost {
   id: string
-  title: string
+  posting_therapist_id: string
+  client_initials: string | null
+  presenting_concerns: string[] | null
+  insurance_type: string | null
+  urgency: string | null
   description: string | null
-  created_at: string
-  poster_id: string
-  poster_name: string | null
   status: string
+  created_at: string
+  poster_name: string | null
 }
 
 export default function DiscoverScreen() {
@@ -67,12 +70,28 @@ export default function DiscoverScreen() {
   const fetchBoardPosts = async () => {
     const { data } = await supabase
       .from('fg_marketplace_posts')
-      .select('id, title, description, created_at, poster_id, poster_name, status')
+      .select('id, posting_therapist_id, client_initials, presenting_concerns, insurance_type, urgency, description, status, created_at')
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(50)
 
-    if (data) setBoardPosts(data)
+    if (data && data.length > 0) {
+      // Fetch poster names
+      const posterIds = [...new Set(data.map(p => p.posting_therapist_id))]
+      const { data: profiles } = await supabase
+        .from('fg_profiles')
+        .select('id, full_name')
+        .in('id', posterIds)
+
+      const nameMap = new Map(profiles?.map(p => [p.id, p.full_name]) ?? [])
+
+      setBoardPosts(data.map(p => ({
+        ...p,
+        poster_name: nameMap.get(p.posting_therapist_id) ?? null,
+      })))
+    } else {
+      setBoardPosts([])
+    }
   }
 
   const filtered = clinicians.filter(c => {
@@ -90,8 +109,10 @@ export default function DiscoverScreen() {
     if (!search.trim()) return true
     const q = search.toLowerCase()
     return (
-      p.title.toLowerCase().includes(q) ||
-      p.description?.toLowerCase().includes(q)
+      p.client_initials?.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q) ||
+      p.presenting_concerns?.some(c => c.toLowerCase().includes(q)) ||
+      p.poster_name?.toLowerCase().includes(q)
     )
   })
 
@@ -313,37 +334,73 @@ export default function DiscoverScreen() {
               <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Referral opportunities will appear here</Text>
             </View>
           }
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={{
-                backgroundColor: colors.white,
-                borderRadius: 14,
-                padding: 16,
-                marginBottom: 10,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
-                {item.title}
-              </Text>
-              {item.description && (
-                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }} numberOfLines={2}>
-                  {item.description}
-                </Text>
-              )}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                {item.poster_name && (
-                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                    {item.poster_name}
+          renderItem={({ item }) => {
+            const urgencyStyle = item.urgency?.toLowerCase() === 'high'
+              ? { bg: '#fef2f2', text: '#dc2626' }
+              : item.urgency?.toLowerCase() === 'medium'
+              ? { bg: '#fffbeb', text: '#d97706' }
+              : { bg: '#f0fdf4', text: '#16a34a' }
+
+            return (
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.white,
+                  borderRadius: 14,
+                  padding: 16,
+                  marginBottom: 10,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
+                    Client: {item.client_initials ?? 'N/A'}
                   </Text>
-                )}
-                <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: item.poster_name ? 8 : 0 }}>
-                  {new Date(item.created_at).toLocaleDateString()}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
+                  {item.urgency ? (
+                    <View style={{
+                      backgroundColor: urgencyStyle.bg,
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 8,
+                    }}>
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: urgencyStyle.text }}>
+                        {item.urgency}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+                {item.description ? (
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8 }} numberOfLines={2}>
+                    {item.description}
+                  </Text>
+                ) : null}
+                {item.presenting_concerns && item.presenting_concerns.length > 0 ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {item.presenting_concerns.map((concern, i) => (
+                      <View key={i} style={{
+                        backgroundColor: colors.tealLight,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 8,
+                      }}>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
+                          {concern}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                    {item.poster_name ?? 'Anonymous'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 8 }}>
+                    {new Date(item.created_at).toLocaleDateString()}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )
+          }}
         />
       )}
     </View>
