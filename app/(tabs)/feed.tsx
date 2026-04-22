@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import {
@@ -19,14 +20,17 @@ import {
   Handshake,
   CheckCircle2,
   Lightbulb,
+  Plus,
 } from 'lucide-react-native'
 import { HeaderBar } from '../../src/components/header-bar'
 import { colors } from '../../src/lib/colors'
 import { supabase } from '../../src/lib/supabase'
+import { useAuth } from '../../src/contexts/auth-context'
 
 // ─── Types ───────────────────────────────────────────────
 
 type FilterTab = 'all' | 'opportunities' | 'activity' | 'insights'
+type BoardScope = 'all' | 'my-network'
 type Urgency = 'routine' | 'urgent' | 'crisis'
 type ActivityType = 'signup' | 'partnership' | 'referral_completed' | 'tip'
 
@@ -59,7 +63,7 @@ type FeedItem =
 
 const TABS: { value: FilterTab; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'opportunities', label: 'Opportunities' },
+  { value: 'opportunities', label: 'Referral Board' },
   { value: 'activity', label: 'Activity' },
   { value: 'insights', label: 'Insights' },
 ]
@@ -421,9 +425,12 @@ function EmptyState({ message }: { message: string }) {
 
 export default function FeedScreen() {
   const router = useRouter()
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
+  const [boardScope, setBoardScope] = useState<BoardScope>('all')
   const [opportunities, setOpportunities] = useState<ReferralOpportunity[]>([])
   const [activities, setActivities] = useState<ActivityItem[]>([])
+  const [connectedIds, setConnectedIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -567,9 +574,27 @@ export default function FeedScreen() {
     }
   }, [])
 
+  const fetchConnections = useCallback(async () => {
+    if (!user?.id) {
+      setConnectedIds(new Set())
+      return
+    }
+    const { data } = await supabase
+      .from('fg_partnerships')
+      .select('requester_id, recipient_id')
+      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
+      .eq('status', 'accepted')
+    const ids = new Set<string>()
+    for (const p of (data || []) as any[]) {
+      const other = p.requester_id === user.id ? p.recipient_id : p.requester_id
+      if (other) ids.add(other)
+    }
+    setConnectedIds(ids)
+  }, [user?.id])
+
   const loadAll = useCallback(async () => {
-    await Promise.all([fetchOpportunities(), fetchActivity()])
-  }, [fetchOpportunities, fetchActivity])
+    await Promise.all([fetchOpportunities(), fetchActivity(), fetchConnections()])
+  }, [fetchOpportunities, fetchActivity, fetchConnections])
 
   useEffect(() => {
     setLoading(true)
@@ -589,31 +614,69 @@ export default function FeedScreen() {
     [router]
   )
 
+  const scopedOpportunities = useMemo(
+    () =>
+      boardScope === 'my-network'
+        ? opportunities.filter((o) => connectedIds.has(o.poster_id))
+        : opportunities,
+    [boardScope, opportunities, connectedIds]
+  )
+
   const visibleData = useMemo<FeedItem[]>(() => {
     if (activeTab === 'insights') return []
     if (activeTab === 'opportunities') {
-      return opportunities.map((o) => ({ kind: 'opportunity' as const, created_at: o.created_at, data: o }))
+      return scopedOpportunities.map((o) => ({ kind: 'opportunity' as const, created_at: o.created_at, data: o }))
     }
     if (activeTab === 'activity') {
       return activities.map((a) => ({ kind: 'activity' as const, created_at: a.created_at, data: a }))
     }
-    // 'all' → merge, sort descending
+    // 'all' → merge (full opportunities list, not scoped — All means everything)
     const merged: FeedItem[] = [
       ...opportunities.map((o) => ({ kind: 'opportunity' as const, created_at: o.created_at, data: o })),
       ...activities.map((a) => ({ kind: 'activity' as const, created_at: a.created_at, data: a })),
     ]
     merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     return merged
-  }, [activeTab, opportunities, activities])
+  }, [activeTab, opportunities, scopedOpportunities, activities])
 
   const renderHeader = () => (
-    <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
-      <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, marginBottom: 12 }}>
-        Feed
-      </Text>
+    <View style={{ paddingTop: 8 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 20,
+          marginBottom: 12,
+        }}
+      >
+        <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary }}>Feed</Text>
+        <TouchableOpacity
+          onPress={() => router.push('/new-board-post' as any)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            backgroundColor: colors.teal,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 10,
+          }}
+        >
+          <Plus size={14} color={colors.white} />
+          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.white }}>
+            Post a Referral
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* Filter tabs */}
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+      {/* Primary filter tabs (horizontally scrollable) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+        style={{ marginBottom: activeTab === 'opportunities' ? 10 : 16 }}
+      >
         {TABS.map((tab) => {
           const active = activeTab === tab.value
           return (
@@ -641,9 +704,53 @@ export default function FeedScreen() {
             </TouchableOpacity>
           )
         })}
-      </View>
+      </ScrollView>
 
-      {activeTab === 'insights' ? <InsightsPlaceholder /> : null}
+      {/* Sub-filter for Referral Board tab */}
+      {activeTab === 'opportunities' ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: 8,
+            paddingHorizontal: 20,
+            marginBottom: 16,
+          }}
+        >
+          {(['all', 'my-network'] as const).map((scope) => {
+            const active = boardScope === scope
+            return (
+              <TouchableOpacity
+                key={scope}
+                onPress={() => setBoardScope(scope)}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: active ? colors.textPrimary : colors.white,
+                  borderWidth: 1,
+                  borderColor: active ? colors.textPrimary : colors.border,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '700',
+                    color: active ? colors.white : colors.textSecondary,
+                  }}
+                >
+                  {scope === 'all' ? 'All' : 'My Network'}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      ) : null}
+
+      {activeTab === 'insights' ? (
+        <View style={{ paddingHorizontal: 20 }}>
+          <InsightsPlaceholder />
+        </View>
+      ) : null}
     </View>
   )
 
@@ -658,7 +765,9 @@ export default function FeedScreen() {
     }
     const message =
       activeTab === 'opportunities'
-        ? 'No open referral opportunities right now.'
+        ? boardScope === 'my-network'
+          ? 'No open referrals from your network yet.'
+          : 'No open referral opportunities right now.'
         : activeTab === 'activity'
         ? 'No recent activity.'
         : 'Your feed is empty. Check back soon!'
