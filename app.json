@@ -29,6 +29,19 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ad50c5bb-2918-4448-a9f9-a8c72bcd348e"
+      }
+    },
+    "owner": "scottman77",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ad50c5bb-2918-4448-a9f9-a8c72bcd348e"
+    }
   }
 }
