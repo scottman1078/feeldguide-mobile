@@ -715,7 +715,7 @@ export default function FeedScreen() {
     return merged
   }, [activeTab, opportunities, scopedOpportunities, activities])
 
-  const renderHeader = () => (
+  const header = (
     <View style={{ paddingTop: 8 }}>
       <View
         style={{
@@ -800,9 +800,11 @@ export default function FeedScreen() {
               <TouchableOpacity
                 key={scope}
                 onPress={() => setBoardScope(scope)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                 style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
                   borderRadius: 999,
                   backgroundColor: active ? colors.textPrimary : colors.white,
                   borderWidth: 1,
@@ -861,12 +863,12 @@ export default function FeedScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <HeaderBar />
+      {header}
       <FlatList
         data={visibleData}
         keyExtractor={(item) => `${item.kind}-${item.data.id}`}
-        ListHeaderComponent={renderHeader}
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 24, paddingTop: 4 }}
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 20 }}>
             {item.kind === 'opportunity' ? (
