@@ -14,6 +14,14 @@ interface Profile {
   is_admin: number | null
   user_tier: string
   trust_score: number
+  onboarding_step: string | null
+  trial_started_at: string | null
+  trial_ends_at: string | null
+  trial_type: string | null
+  subscription_status: string | null
+  base_period_end: string | null
+  cancel_at_period_end: boolean | null
+  supervisor_listing_active: boolean | null
   [key: string]: unknown
 }
 
@@ -40,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data } = await supabase
         .from('fg_profiles')
-        .select('id, email, full_name, avatar_url, license_type, location_city, location_state, onboarding_completed, is_admin, user_tier, trust_score')
+        .select('id, email, full_name, avatar_url, license_type, location_city, location_state, onboarding_completed, is_admin, user_tier, trust_score, onboarding_step, trial_started_at, trial_ends_at, trial_type, subscription_status, base_period_end, cancel_at_period_end, supervisor_listing_active')
         .eq('id', userId)
         .single()
       if (data) setProfile(data as Profile)

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors } from '../../src/lib/colors'
 import { supabase } from '../../src/lib/supabase'
 import { useAuth } from '../../src/contexts/auth-context'
+import { TrialBanner } from '../../src/components/trial-banner'
 
 const tabs = [
   { name: 'feed', label: 'Feed', Icon: Rss },
@@ -20,6 +21,15 @@ export default function TabLayout() {
   const pathname = usePathname()
   const { profile } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
+
+  // Soft lockout: bounce expired users to the reactivate screen.
+  useEffect(() => {
+    const status = profile?.subscription_status
+    if (!status) return
+    if ((status === 'expired' || status === 'canceled') && !pathname.includes('reactivate') && !pathname.includes('profile') && !pathname.includes('settings')) {
+      router.replace('/reactivate' as any)
+    }
+  }, [profile?.subscription_status, pathname, router])
 
   useEffect(() => {
     if (!profile?.id) return
@@ -40,6 +50,7 @@ export default function TabLayout() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
+      <TrialBanner />
       <View style={{ flex: 1 }}>
         <Slot />
       </View>
