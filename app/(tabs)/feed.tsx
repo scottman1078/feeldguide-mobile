@@ -30,7 +30,7 @@ import { useAuth } from '../../src/contexts/auth-context'
 // ─── Types ───────────────────────────────────────────────
 
 type FilterTab = 'all' | 'opportunities' | 'activity' | 'insights'
-type BoardScope = 'all' | 'my-network'
+type BoardScope = 'all' | 'my-network' | 'my-posts'
 type Urgency = 'routine' | 'urgent' | 'crisis'
 type ActivityType = 'signup' | 'partnership' | 'referral_completed' | 'tip'
 
@@ -45,6 +45,7 @@ interface ReferralOpportunity {
   created_at: string
   poster_name: string
   poster_id: string
+  response_count?: number
 }
 
 interface ActivityItem {
@@ -285,14 +286,37 @@ function OpportunityCard({ post, onPress }: { post: ReferralOpportunity; onPress
       <View
         style={{
           flexDirection: 'row',
-          justifyContent: 'flex-end',
+          justifyContent: post.response_count !== undefined ? 'space-between' : 'flex-end',
           alignItems: 'center',
           paddingTop: 10,
           borderTopWidth: 1,
           borderTopColor: colors.border,
         }}
       >
-        {post.status === 'open' ? (
+        {post.response_count !== undefined ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              backgroundColor: post.response_count > 0 ? colors.tealLight : colors.background,
+              borderRadius: 8,
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '700',
+                color: post.response_count > 0 ? colors.teal : colors.textMuted,
+              }}
+            >
+              {post.response_count} {post.response_count === 1 ? 'response' : 'responses'}
+            </Text>
+          </View>
+        ) : null}
+        {post.status === 'open' && post.response_count === undefined ? (
           <View
             style={{
               flexDirection: 'row',
@@ -308,6 +332,9 @@ function OpportunityCard({ post, onPress }: { post: ReferralOpportunity; onPress
             <Send size={12} color={colors.teal} />
             <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>Respond</Text>
           </View>
+        ) : null}
+        {post.response_count !== undefined ? (
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.teal }}>View →</Text>
         ) : null}
       </View>
     </TouchableOpacity>
@@ -429,6 +456,7 @@ export default function FeedScreen() {
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const [boardScope, setBoardScope] = useState<BoardScope>('all')
   const [opportunities, setOpportunities] = useState<ReferralOpportunity[]>([])
+  const [myPosts, setMyPosts] = useState<ReferralOpportunity[]>([])
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [connectedIds, setConnectedIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -574,6 +602,52 @@ export default function FeedScreen() {
     }
   }, [])
 
+  const fetchMyPosts = useCallback(async () => {
+    if (!user?.id) {
+      setMyPosts([])
+      return
+    }
+    const { data } = await supabase
+      .from('fg_marketplace_posts')
+      .select(
+        'id, client_initials, urgency, description, presenting_concerns, insurance_type, status, created_at, posting_therapist_id'
+      )
+      .eq('posting_therapist_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (!data || data.length === 0) {
+      setMyPosts([])
+      return
+    }
+
+    const postIds = data.map((p: any) => p.id)
+    const { data: responses } = await supabase
+      .from('fg_marketplace_responses')
+      .select('post_id')
+      .in('post_id', postIds)
+
+    const countByPost: Record<string, number> = {}
+    for (const r of (responses || []) as any[]) {
+      countByPost[r.post_id] = (countByPost[r.post_id] || 0) + 1
+    }
+
+    const mapped: ReferralOpportunity[] = data.map((row: any) => ({
+      id: row.id,
+      client_initials: row.client_initials || '??',
+      urgency: (row.urgency as Urgency) || 'routine',
+      description: row.description || '',
+      presenting_concerns: row.presenting_concerns || [],
+      insurance_type: row.insurance_type,
+      status: row.status,
+      created_at: row.created_at,
+      poster_name: 'You',
+      poster_id: row.posting_therapist_id,
+      response_count: countByPost[row.id] || 0,
+    }))
+    setMyPosts(mapped)
+  }, [user?.id])
+
   const fetchConnections = useCallback(async () => {
     if (!user?.id) {
       setConnectedIds(new Set())
@@ -593,8 +667,8 @@ export default function FeedScreen() {
   }, [user?.id])
 
   const loadAll = useCallback(async () => {
-    await Promise.all([fetchOpportunities(), fetchActivity(), fetchConnections()])
-  }, [fetchOpportunities, fetchActivity, fetchConnections])
+    await Promise.all([fetchOpportunities(), fetchActivity(), fetchConnections(), fetchMyPosts()])
+  }, [fetchOpportunities, fetchActivity, fetchConnections, fetchMyPosts])
 
   useEffect(() => {
     setLoading(true)
@@ -614,13 +688,15 @@ export default function FeedScreen() {
     [router]
   )
 
-  const scopedOpportunities = useMemo(
-    () =>
-      boardScope === 'my-network'
-        ? opportunities.filter((o) => connectedIds.has(o.poster_id))
-        : opportunities,
-    [boardScope, opportunities, connectedIds]
-  )
+  const scopedOpportunities = useMemo(() => {
+    if (boardScope === 'my-network') {
+      return opportunities.filter((o) => connectedIds.has(o.poster_id))
+    }
+    if (boardScope === 'my-posts') {
+      return myPosts
+    }
+    return opportunities
+  }, [boardScope, opportunities, connectedIds, myPosts])
 
   const visibleData = useMemo<FeedItem[]>(() => {
     if (activeTab === 'insights') return []
@@ -716,8 +792,10 @@ export default function FeedScreen() {
             marginBottom: 16,
           }}
         >
-          {(['all', 'my-network'] as const).map((scope) => {
+          {(['all', 'my-network', 'my-posts'] as const).map((scope) => {
             const active = boardScope === scope
+            const label =
+              scope === 'all' ? 'All' : scope === 'my-network' ? 'My Network' : 'My Posts'
             return (
               <TouchableOpacity
                 key={scope}
@@ -738,7 +816,7 @@ export default function FeedScreen() {
                     color: active ? colors.white : colors.textSecondary,
                   }}
                 >
-                  {scope === 'all' ? 'All' : 'My Network'}
+                  {label}
                 </Text>
               </TouchableOpacity>
             )
@@ -767,6 +845,8 @@ export default function FeedScreen() {
       activeTab === 'opportunities'
         ? boardScope === 'my-network'
           ? 'No open referrals from your network yet.'
+          : boardScope === 'my-posts'
+          ? "You haven't posted a referral yet. Tap Post a Referral to create one."
           : 'No open referral opportunities right now.'
         : activeTab === 'activity'
         ? 'No recent activity.'

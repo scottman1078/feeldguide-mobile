@@ -15,12 +15,26 @@ import { supabase } from '../src/lib/supabase'
 import { useAuth } from '../src/contexts/auth-context'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 
+interface ResponseEntry {
+  id: string
+  pitch: string
+  created_at: string
+  therapist: {
+    id: string
+    full_name: string | null
+    license_type: string | null
+    location_city: string | null
+    location_state: string | null
+  } | null
+}
+
 export default function BoardPostDetailScreen() {
   const router = useRouter()
   const { postId } = useLocalSearchParams<{ postId: string }>()
   const { profile } = useAuth()
   const [post, setPost] = useState<any>(null)
   const [poster, setPoster] = useState<any>(null)
+  const [responses, setResponses] = useState<ResponseEntry[]>([])
   const [loading, setLoading] = useState(1)
   const [responseText, setResponseText] = useState('')
   const [sending, setSending] = useState(0)
@@ -50,6 +64,48 @@ export default function BoardPostDetailScreen() {
   }, [postId])
 
   useEffect(() => { fetchPost() }, [fetchPost])
+
+  // When the viewer owns the post, load responses
+  useEffect(() => {
+    if (!post || !profile?.id) return
+    if (post.posting_therapist_id !== profile.id) return
+
+    let cancelled = false
+    ;(async () => {
+      const { data: raw } = await supabase
+        .from('fg_marketplace_responses')
+        .select('id, pitch, created_at, therapist_id')
+        .eq('post_id', post.id)
+        .order('created_at', { ascending: false })
+
+      if (!raw || raw.length === 0) {
+        if (!cancelled) setResponses([])
+        return
+      }
+
+      const therapistIds = [...new Set(raw.map((r: any) => r.therapist_id).filter(Boolean))]
+      let therapistMap = new Map<string, any>()
+      if (therapistIds.length > 0) {
+        const { data: ts } = await supabase
+          .from('fg_profiles')
+          .select('id, full_name, license_type, location_city, location_state')
+          .in('id', therapistIds)
+        if (ts) therapistMap = new Map(ts.map((t: any) => [t.id, t]))
+      }
+
+      const mapped: ResponseEntry[] = raw.map((r: any) => ({
+        id: r.id,
+        pitch: r.pitch,
+        created_at: r.created_at,
+        therapist: therapistMap.get(r.therapist_id) || null,
+      }))
+      if (!cancelled) setResponses(mapped)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [post, profile?.id])
 
   const handleRespond = async () => {
     if (!responseText.trim() || !phiChecked || !profile?.id || !postId) return
@@ -261,6 +317,117 @@ export default function BoardPostDetailScreen() {
             >
               <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>View Profile</Text>
             </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Responses list — visible to the post owner only */}
+        {isOwnPost ? (
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 }}>
+              Responses ({responses.length})
+            </Text>
+            {responses.length === 0 ? (
+              <View
+                style={{
+                  backgroundColor: colors.white,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  padding: 20,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+                  No responses yet. You&apos;ll see them here when clinicians reach out.
+                </Text>
+              </View>
+            ) : (
+              responses.map((r) => {
+                const name = r.therapist?.full_name || 'Clinician'
+                const loc = [r.therapist?.location_city, r.therapist?.location_state].filter(Boolean).join(', ')
+                const initials = name.split(' ').map((p) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+                return (
+                  <View
+                    key={r.id}
+                    style={{
+                      backgroundColor: colors.white,
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      padding: 16,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                      <View
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 18,
+                          backgroundColor: colors.tealLight,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 10,
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.teal }}>{initials}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{name}</Text>
+                        <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                          {r.therapist?.license_type || 'Clinician'}{loc ? ` · ${loc}` : ''}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                        {new Date(r.created_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 14, color: colors.textPrimary, lineHeight: 21, marginBottom: 10 }}>
+                      {r.pitch}
+                    </Text>
+                    {r.therapist?.id ? (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() =>
+                            router.push(
+                              `/conversation?userId=${r.therapist!.id}&userName=${encodeURIComponent(name)}` as any
+                            )
+                          }
+                          style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            backgroundColor: colors.teal,
+                            borderRadius: 10,
+                            paddingVertical: 10,
+                          }}
+                        >
+                          <MessageSquare size={14} color={colors.white} />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.white }}>Message</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => router.push(`/clinician?userId=${r.therapist!.id}` as any)}
+                          style={{
+                            flex: 1,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: colors.white,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            borderRadius: 10,
+                            paddingVertical: 10,
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>View Profile</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </View>
+                )
+              })
+            )}
           </View>
         ) : null}
 
