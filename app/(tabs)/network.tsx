@@ -789,7 +789,7 @@ export default function NetworkScreen() {
             fontWeight: '700',
             color: viewMode === 'all_clinicians' ? colors.white : colors.textSecondary,
           }}>
-            Clinicians
+            All Therapists
           </Text>
         </TouchableOpacity>
       </View>
@@ -876,7 +876,7 @@ export default function NetworkScreen() {
                 No connections yet
               </Text>
               <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>
-                Switch to Clinicians to find colleagues
+                Switch to All Therapists to find colleagues
               </Text>
             </View>
           }
