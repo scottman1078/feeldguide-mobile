@@ -60,7 +60,7 @@ export default function VerifyPhoneScreen() {
         return
       }
 
-      router.replace('/(tabs)/discover')
+      router.replace('/(tabs)/feed')
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

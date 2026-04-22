@@ -18,5 +18,5 @@ export default function Index() {
     return <Redirect href="/(auth)/sign-up" />
   }
 
-  return <Redirect href="/(tabs)/discover" />
+  return <Redirect href="/(tabs)/feed" />
 }

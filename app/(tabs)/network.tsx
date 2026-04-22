@@ -26,7 +26,7 @@ import { useAuth } from '../../src/contexts/auth-context'
 import { HeaderBar } from '../../src/components/header-bar'
 import { useRouter } from 'expo-router'
 
-type ViewMode = 'my_network' | 'all_clinicians'
+type ViewMode = 'my_network' | 'all_clinicians' | 'board'
 type ConnectionStatus = 'none' | 'pending_sent' | 'pending_received' | 'accepted'
 
 interface Connection {
@@ -65,6 +65,19 @@ interface Clinician {
   bio: string | null
 }
 
+interface BoardPost {
+  id: string
+  posting_therapist_id: string
+  client_initials: string | null
+  presenting_concerns: string[] | null
+  insurance_type: string | null
+  urgency: string | null
+  description: string | null
+  status: string
+  created_at: string
+  poster_name: string | null
+}
+
 export default function NetworkScreen() {
   const { user } = useAuth()
   const router = useRouter()
@@ -84,6 +97,10 @@ export default function NetworkScreen() {
   const [loadingClinicians, setLoadingClinicians] = useState(false)
   const [connectionMap, setConnectionMap] = useState<Map<string, ConnectionStatus>>(new Map())
   const [connectingId, setConnectingId] = useState<string | null>(null)
+
+  // Board state
+  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([])
+  const [loadingBoard, setLoadingBoard] = useState(false)
 
   // ---- Fetch: My Network ----
   const fetchConnections = useCallback(async () => {
@@ -170,6 +187,35 @@ export default function NetworkScreen() {
     setLoadingClinicians(false)
   }, [])
 
+  // ---- Fetch: Board posts ----
+  const fetchBoardPosts = useCallback(async () => {
+    setLoadingBoard(true)
+    const { data } = await supabase
+      .from('fg_marketplace_posts')
+      .select('id, posting_therapist_id, client_initials, presenting_concerns, insurance_type, urgency, description, status, created_at')
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (data && data.length > 0) {
+      const posterIds = [...new Set(data.map(p => p.posting_therapist_id))]
+      const { data: profiles } = await supabase
+        .from('fg_profiles')
+        .select('id, full_name')
+        .in('id', posterIds)
+
+      const nameMap = new Map(profiles?.map(p => [p.id, p.full_name]) ?? [])
+
+      setBoardPosts(data.map(p => ({
+        ...p,
+        poster_name: nameMap.get(p.posting_therapist_id) ?? null,
+      })))
+    } else {
+      setBoardPosts([])
+    }
+    setLoadingBoard(false)
+  }, [])
+
   // ---- Fetch: Connection statuses (for All Clinicians view) ----
   const fetchConnectionStatuses = useCallback(async () => {
     if (!user) return
@@ -203,6 +249,13 @@ export default function NetworkScreen() {
       fetchClinicians()
     }
   }, [viewMode, clinicians.length, fetchClinicians])
+
+  // Lazy-load board posts when switching to that tab
+  useEffect(() => {
+    if (viewMode === 'board' && boardPosts.length === 0) {
+      fetchBoardPosts()
+    }
+  }, [viewMode, boardPosts.length, fetchBoardPosts])
 
   // ---- Actions ----
   const handleAccept = async (connectionId: string) => {
@@ -296,6 +349,17 @@ export default function NetworkScreen() {
       c.license_type?.toLowerCase().includes(q) ||
       c.location_city?.toLowerCase().includes(q) ||
       c.location_state?.toLowerCase().includes(q)
+    )
+  })
+
+  const filteredBoardPosts = boardPosts.filter(p => {
+    if (!search.trim()) return true
+    const q = search.toLowerCase()
+    return (
+      p.client_initials?.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q) ||
+      p.presenting_concerns?.some(c => c.toLowerCase().includes(q)) ||
+      p.poster_name?.toLowerCase().includes(q)
     )
   })
 
@@ -593,6 +657,120 @@ export default function NetworkScreen() {
     )
   }
 
+  // ---- Render: Board post card ----
+  const renderBoardPost = ({ item }: { item: BoardPost }) => {
+    const urgencyStyle = item.urgency?.toLowerCase() === 'high'
+      ? { bg: '#fef2f2', text: '#dc2626' }
+      : item.urgency?.toLowerCase() === 'medium'
+      ? { bg: '#fffbeb', text: '#d97706' }
+      : { bg: '#f0fdf4', text: '#16a34a' }
+
+    return (
+      <TouchableOpacity
+        onPress={() => router.push(`/board-post?postId=${item.id}` as any)}
+        activeOpacity={0.7}
+        style={{
+          backgroundColor: colors.white,
+          borderRadius: 14,
+          padding: 16,
+          marginBottom: 10,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
+            Client: {item.client_initials ?? 'N/A'}
+          </Text>
+          {item.urgency ? (
+            <View style={{
+              backgroundColor: urgencyStyle.bg,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              borderRadius: 8,
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: urgencyStyle.text }}>
+                {item.urgency}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        {item.description ? (
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8 }} numberOfLines={2}>
+            {item.description}
+          </Text>
+        ) : null}
+        {item.presenting_concerns && item.presenting_concerns.length > 0 ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+            {item.presenting_concerns.map((concern, i) => (
+              <View key={i} style={{
+                backgroundColor: colors.tealLight,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 8,
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
+                  {concern}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ fontSize: 12, color: colors.textMuted }}>
+            {item.poster_name ?? 'Anonymous'}
+          </Text>
+          <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 8 }}>
+            {new Date(item.created_at).toLocaleDateString()}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    )
+  }
+
+  // ---- Invite CTA banner (used by All Clinicians + Board views) ----
+  const InviteCTA = () => (
+    <TouchableOpacity
+      onPress={() => router.push('/invite' as any)}
+      style={{
+        backgroundColor: colors.teal,
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+      }}
+    >
+      <View style={{
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+      }}>
+        <UserPlus size={20} color={colors.white} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.white }}>
+          Grow your network
+        </Text>
+        <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
+          Invite a colleague
+        </Text>
+      </View>
+      <View style={{
+        backgroundColor: colors.white,
+        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+      }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal }}>Invite</Text>
+      </View>
+    </TouchableOpacity>
+  )
+
   // ---- My Network list header ----
   const MyNetworkHeader = () => (
     <View>
@@ -678,7 +856,15 @@ export default function NetworkScreen() {
     </View>
   )
 
-  const isLoading = viewMode === 'my_network' ? loadingNetwork : loadingClinicians
+  const isLoading =
+    viewMode === 'my_network' ? loadingNetwork
+    : viewMode === 'all_clinicians' ? loadingClinicians
+    : loadingBoard
+
+  const searchPlaceholder =
+    viewMode === 'my_network' ? 'Search connections...'
+    : viewMode === 'all_clinicians' ? 'Search by name, license, city...'
+    : 'Search board posts...'
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -689,13 +875,13 @@ export default function NetworkScreen() {
         <Text style={{ fontSize: 24, fontWeight: '800', color: colors.textPrimary }}>Network</Text>
       </View>
 
-      {/* Pill toggle: My Network / All Clinicians */}
+      {/* Pill toggle: My Network / All Clinicians / Board */}
       <View style={{
         flexDirection: 'row',
         paddingHorizontal: 20,
         marginTop: 12,
         marginBottom: 8,
-        gap: 8,
+        gap: 6,
       }}>
         <TouchableOpacity
           onPress={() => setViewMode('my_network')}
@@ -710,7 +896,7 @@ export default function NetworkScreen() {
           }}
         >
           <Text style={{
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: '700',
             color: viewMode === 'my_network' ? colors.white : colors.textSecondary,
           }}>
@@ -730,11 +916,31 @@ export default function NetworkScreen() {
           }}
         >
           <Text style={{
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: '700',
             color: viewMode === 'all_clinicians' ? colors.white : colors.textSecondary,
           }}>
-            All Clinicians
+            Clinicians
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setViewMode('board')}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            borderRadius: 10,
+            alignItems: 'center',
+            backgroundColor: viewMode === 'board' ? colors.teal : colors.white,
+            borderWidth: 1,
+            borderColor: viewMode === 'board' ? colors.teal : colors.border,
+          }}
+        >
+          <Text style={{
+            fontSize: 13,
+            fontWeight: '700',
+            color: viewMode === 'board' ? colors.white : colors.textSecondary,
+          }}>
+            Board
           </Text>
         </TouchableOpacity>
       </View>
@@ -754,7 +960,7 @@ export default function NetworkScreen() {
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder={viewMode === 'my_network' ? 'Search connections...' : 'Search by name, license, city...'}
+            placeholder={searchPlaceholder}
             placeholderTextColor={colors.textMuted}
             style={{ flex: 1, padding: 12, fontSize: 15, color: colors.textPrimary }}
           />
@@ -779,17 +985,18 @@ export default function NetworkScreen() {
                 No connections yet
               </Text>
               <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>
-                Switch to All Clinicians to find colleagues
+                Switch to Clinicians to find colleagues
               </Text>
             </View>
           }
           renderItem={renderConnection}
         />
-      ) : (
+      ) : viewMode === 'all_clinicians' ? (
         <FlatList
           data={filteredClinicians}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}
+          ListHeaderComponent={<InviteCTA />}
           ListEmptyComponent={
             <View style={{ alignItems: 'center', paddingTop: 60 }}>
               <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textSecondary }}>No clinicians found</Text>
@@ -797,6 +1004,19 @@ export default function NetworkScreen() {
             </View>
           }
           renderItem={renderClinician}
+        />
+      ) : (
+        <FlatList
+          data={filteredBoardPosts}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', paddingTop: 60 }}>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textSecondary }}>No board posts yet</Text>
+              <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Referral opportunities will appear here</Text>
+            </View>
+          }
+          renderItem={renderBoardPost}
         />
       )}
     </View>

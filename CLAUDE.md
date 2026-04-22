@@ -27,7 +27,7 @@ When the user says "sync web and mobile repos", perform a full audit of the web 
 - Phone lookup checks existence before sending SMS
 
 ## Navigation
-- 5 bottom tabs: Discover, Network, Referrals, Messages, More
+- 5 bottom tabs: Feed, Network, Referrals, Messages, More
 - Custom tab bar in `app/(tabs)/_layout.tsx` using Slot + TouchableOpacity
 - Header bar component at `src/components/header-bar.tsx`
 - More tab: Profile, Settings, Invite, Help, Sign Out

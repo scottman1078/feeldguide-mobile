@@ -110,7 +110,7 @@ export default function SignInScreen() {
           setLoading(false)
           return
         }
-        router.replace('/(tabs)/discover')
+        router.replace('/(tabs)/feed')
       } else {
         setError('Could not sign in. Try creating an account.')
       }
