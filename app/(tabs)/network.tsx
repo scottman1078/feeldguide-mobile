@@ -19,14 +19,18 @@ import {
   MessageCircle,
   ChevronDown,
   ChevronUp,
+  List as ListIcon,
+  Map as MapIcon,
 } from 'lucide-react-native'
+import MapView, { Marker } from 'react-native-maps'
 import { supabase } from '../../src/lib/supabase'
 import { colors } from '../../src/lib/colors'
 import { useAuth } from '../../src/contexts/auth-context'
 import { HeaderBar } from '../../src/components/header-bar'
 import { useRouter } from 'expo-router'
 
-type ViewMode = 'my_network' | 'all_clinicians' | 'board'
+type ViewMode = 'my_network' | 'all_clinicians'
+type CliniciansDisplay = 'list' | 'map'
 type ConnectionStatus = 'none' | 'pending_sent' | 'pending_received' | 'accepted'
 
 interface Connection {
@@ -65,24 +69,12 @@ interface Clinician {
   bio: string | null
 }
 
-interface BoardPost {
-  id: string
-  posting_therapist_id: string
-  client_initials: string | null
-  presenting_concerns: string[] | null
-  insurance_type: string | null
-  urgency: string | null
-  description: string | null
-  status: string
-  created_at: string
-  poster_name: string | null
-}
-
 export default function NetworkScreen() {
   const { user } = useAuth()
   const router = useRouter()
 
   const [viewMode, setViewMode] = useState<ViewMode>('my_network')
+  const [cliniciansDisplay, setCliniciansDisplay] = useState<CliniciansDisplay>('list')
   const [search, setSearch] = useState('')
 
   // My Network state
@@ -97,10 +89,6 @@ export default function NetworkScreen() {
   const [loadingClinicians, setLoadingClinicians] = useState(false)
   const [connectionMap, setConnectionMap] = useState<Map<string, ConnectionStatus>>(new Map())
   const [connectingId, setConnectingId] = useState<string | null>(null)
-
-  // Board state
-  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([])
-  const [loadingBoard, setLoadingBoard] = useState(false)
 
   // ---- Fetch: My Network ----
   const fetchConnections = useCallback(async () => {
@@ -187,35 +175,6 @@ export default function NetworkScreen() {
     setLoadingClinicians(false)
   }, [])
 
-  // ---- Fetch: Board posts ----
-  const fetchBoardPosts = useCallback(async () => {
-    setLoadingBoard(true)
-    const { data } = await supabase
-      .from('fg_marketplace_posts')
-      .select('id, posting_therapist_id, client_initials, presenting_concerns, insurance_type, urgency, description, status, created_at')
-      .eq('status', 'open')
-      .order('created_at', { ascending: false })
-      .limit(50)
-
-    if (data && data.length > 0) {
-      const posterIds = [...new Set(data.map(p => p.posting_therapist_id))]
-      const { data: profiles } = await supabase
-        .from('fg_profiles')
-        .select('id, full_name')
-        .in('id', posterIds)
-
-      const nameMap = new Map(profiles?.map(p => [p.id, p.full_name]) ?? [])
-
-      setBoardPosts(data.map(p => ({
-        ...p,
-        poster_name: nameMap.get(p.posting_therapist_id) ?? null,
-      })))
-    } else {
-      setBoardPosts([])
-    }
-    setLoadingBoard(false)
-  }, [])
-
   // ---- Fetch: Connection statuses (for All Clinicians view) ----
   const fetchConnectionStatuses = useCallback(async () => {
     if (!user) return
@@ -249,13 +208,6 @@ export default function NetworkScreen() {
       fetchClinicians()
     }
   }, [viewMode, clinicians.length, fetchClinicians])
-
-  // Lazy-load board posts when switching to that tab
-  useEffect(() => {
-    if (viewMode === 'board' && boardPosts.length === 0) {
-      fetchBoardPosts()
-    }
-  }, [viewMode, boardPosts.length, fetchBoardPosts])
 
   // ---- Actions ----
   const handleAccept = async (connectionId: string) => {
@@ -352,16 +304,6 @@ export default function NetworkScreen() {
     )
   })
 
-  const filteredBoardPosts = boardPosts.filter(p => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (
-      p.client_initials?.toLowerCase().includes(q) ||
-      p.description?.toLowerCase().includes(q) ||
-      p.presenting_concerns?.some(c => c.toLowerCase().includes(q)) ||
-      p.poster_name?.toLowerCase().includes(q)
-    )
-  })
 
   const showInviteNudge = viewMode === 'my_network' && connections.length < 5
 
@@ -657,78 +599,7 @@ export default function NetworkScreen() {
     )
   }
 
-  // ---- Render: Board post card ----
-  const renderBoardPost = ({ item }: { item: BoardPost }) => {
-    const urgencyStyle = item.urgency?.toLowerCase() === 'high'
-      ? { bg: '#fef2f2', text: '#dc2626' }
-      : item.urgency?.toLowerCase() === 'medium'
-      ? { bg: '#fffbeb', text: '#d97706' }
-      : { bg: '#f0fdf4', text: '#16a34a' }
-
-    return (
-      <TouchableOpacity
-        onPress={() => router.push(`/board-post?postId=${item.id}` as any)}
-        activeOpacity={0.7}
-        style={{
-          backgroundColor: colors.white,
-          borderRadius: 14,
-          padding: 16,
-          marginBottom: 10,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
-            Client: {item.client_initials ?? 'N/A'}
-          </Text>
-          {item.urgency ? (
-            <View style={{
-              backgroundColor: urgencyStyle.bg,
-              paddingHorizontal: 8,
-              paddingVertical: 3,
-              borderRadius: 8,
-            }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: urgencyStyle.text }}>
-                {item.urgency}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-        {item.description ? (
-          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8 }} numberOfLines={2}>
-            {item.description}
-          </Text>
-        ) : null}
-        {item.presenting_concerns && item.presenting_concerns.length > 0 ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-            {item.presenting_concerns.map((concern, i) => (
-              <View key={i} style={{
-                backgroundColor: colors.tealLight,
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 8,
-              }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
-                  {concern}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 12, color: colors.textMuted }}>
-            {item.poster_name ?? 'Anonymous'}
-          </Text>
-          <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 8 }}>
-            {new Date(item.created_at).toLocaleDateString()}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    )
-  }
-
-  // ---- Invite CTA banner (used by All Clinicians + Board views) ----
+  // ---- Invite CTA banner (used by All Clinicians view) ----
   const InviteCTA = () => (
     <TouchableOpacity
       onPress={() => router.push('/invite' as any)}
@@ -857,14 +728,12 @@ export default function NetworkScreen() {
   )
 
   const isLoading =
-    viewMode === 'my_network' ? loadingNetwork
-    : viewMode === 'all_clinicians' ? loadingClinicians
-    : loadingBoard
+    viewMode === 'my_network' ? loadingNetwork : loadingClinicians
 
   const searchPlaceholder =
-    viewMode === 'my_network' ? 'Search connections...'
-    : viewMode === 'all_clinicians' ? 'Search by name, license, city...'
-    : 'Search board posts...'
+    viewMode === 'my_network'
+      ? 'Search connections...'
+      : 'Search by name, license, city...'
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -875,7 +744,7 @@ export default function NetworkScreen() {
         <Text style={{ fontSize: 24, fontWeight: '800', color: colors.textPrimary }}>Network</Text>
       </View>
 
-      {/* Pill toggle: My Network / All Clinicians / Board */}
+      {/* Pill toggle: My Network / Clinicians */}
       <View style={{
         flexDirection: 'row',
         paddingHorizontal: 20,
@@ -921,26 +790,6 @@ export default function NetworkScreen() {
             color: viewMode === 'all_clinicians' ? colors.white : colors.textSecondary,
           }}>
             Clinicians
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setViewMode('board')}
-          style={{
-            flex: 1,
-            paddingVertical: 10,
-            borderRadius: 10,
-            alignItems: 'center',
-            backgroundColor: viewMode === 'board' ? colors.teal : colors.white,
-            borderWidth: 1,
-            borderColor: viewMode === 'board' ? colors.teal : colors.border,
-          }}
-        >
-          <Text style={{
-            fontSize: 13,
-            fontWeight: '700',
-            color: viewMode === 'board' ? colors.white : colors.textSecondary,
-          }}>
-            Board
           </Text>
         </TouchableOpacity>
       </View>
@@ -991,34 +840,218 @@ export default function NetworkScreen() {
           }
           renderItem={renderConnection}
         />
-      ) : viewMode === 'all_clinicians' ? (
-        <FlatList
-          data={filteredClinicians}
-          keyExtractor={item => item.id}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}
-          ListHeaderComponent={<InviteCTA />}
-          ListEmptyComponent={
-            <View style={{ alignItems: 'center', paddingTop: 60 }}>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textSecondary }}>No clinicians found</Text>
-              <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Try a different search</Text>
-            </View>
-          }
-          renderItem={renderClinician}
-        />
       ) : (
-        <FlatList
-          data={filteredBoardPosts}
-          keyExtractor={item => item.id}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}
-          ListEmptyComponent={
-            <View style={{ alignItems: 'center', paddingTop: 60 }}>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textSecondary }}>No board posts yet</Text>
-              <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Referral opportunities will appear here</Text>
-            </View>
-          }
-          renderItem={renderBoardPost}
-        />
+        <View style={{ flex: 1 }}>
+          <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
+            <CliniciansDisplayToggle value={cliniciansDisplay} onChange={setCliniciansDisplay} />
+          </View>
+          {cliniciansDisplay === 'map' ? (
+            <CliniciansMap
+              clinicians={filteredClinicians}
+              onPinPress={(id) => router.push(`/clinician?userId=${id}` as any)}
+            />
+          ) : (
+            <FlatList
+              data={filteredClinicians}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 }}
+              ListHeaderComponent={<InviteCTA />}
+              ListEmptyComponent={
+                <View style={{ alignItems: 'center', paddingTop: 60 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textSecondary }}>No clinicians found</Text>
+                  <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Try a different search</Text>
+                </View>
+              }
+              renderItem={renderClinician}
+            />
+          )}
+        </View>
       )}
+    </View>
+  )
+}
+
+// ─── Clinicians list/map display toggle ──────────────────
+
+function CliniciansDisplayToggle({
+  value,
+  onChange,
+}: {
+  value: CliniciansDisplay
+  onChange: (v: CliniciansDisplay) => void
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        backgroundColor: colors.white,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 3,
+        alignSelf: 'flex-start',
+      }}
+    >
+      {(['list', 'map'] as const).map((v) => {
+        const active = value === v
+        return (
+          <TouchableOpacity
+            key={v}
+            onPress={() => onChange(v)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 14,
+              paddingVertical: 6,
+              borderRadius: 8,
+              backgroundColor: active ? colors.teal : 'transparent',
+            }}
+          >
+            {v === 'list' ? (
+              <ListIcon size={14} color={active ? colors.white : colors.textSecondary} />
+            ) : (
+              <MapIcon size={14} color={active ? colors.white : colors.textSecondary} />
+            )}
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '700',
+                color: active ? colors.white : colors.textSecondary,
+              }}
+            >
+              {v === 'list' ? 'List' : 'Map'}
+            </Text>
+          </TouchableOpacity>
+        )
+      })}
+    </View>
+  )
+}
+
+// ─── Clinicians map view ─────────────────────────────────
+// Uses state centroids as approximate marker positions, since fg_profiles
+// doesn't currently store lat/lng. Web version uses a geocoded API; mobile
+// approximates until a geocoded DB column lands.
+
+const US_STATE_CENTROIDS: Record<string, { lat: number; lng: number }> = {
+  AL: { lat: 32.806671, lng: -86.79113 }, AK: { lat: 61.370716, lng: -152.404419 },
+  AZ: { lat: 33.729759, lng: -111.431221 }, AR: { lat: 34.969704, lng: -92.373123 },
+  CA: { lat: 36.116203, lng: -119.681564 }, CO: { lat: 39.059811, lng: -105.311104 },
+  CT: { lat: 41.597782, lng: -72.755371 }, DE: { lat: 39.318523, lng: -75.507141 },
+  FL: { lat: 27.766279, lng: -81.686783 }, GA: { lat: 33.040619, lng: -83.643074 },
+  HI: { lat: 21.094318, lng: -157.498337 }, ID: { lat: 44.240459, lng: -114.478828 },
+  IL: { lat: 40.349457, lng: -88.986137 }, IN: { lat: 39.849426, lng: -86.258278 },
+  IA: { lat: 42.011539, lng: -93.210526 }, KS: { lat: 38.5266, lng: -96.726486 },
+  KY: { lat: 37.66814, lng: -84.670067 }, LA: { lat: 31.169546, lng: -91.867805 },
+  ME: { lat: 44.693947, lng: -69.381927 }, MD: { lat: 39.063946, lng: -76.802101 },
+  MA: { lat: 42.230171, lng: -71.530106 }, MI: { lat: 43.326618, lng: -84.536095 },
+  MN: { lat: 45.694454, lng: -93.900192 }, MS: { lat: 32.741646, lng: -89.678696 },
+  MO: { lat: 38.456085, lng: -92.288368 }, MT: { lat: 46.921925, lng: -110.454353 },
+  NE: { lat: 41.12537, lng: -98.268082 }, NV: { lat: 38.313515, lng: -117.055374 },
+  NH: { lat: 43.452492, lng: -71.563896 }, NJ: { lat: 40.298904, lng: -74.521011 },
+  NM: { lat: 34.840515, lng: -106.248482 }, NY: { lat: 42.165726, lng: -74.948051 },
+  NC: { lat: 35.630066, lng: -79.806419 }, ND: { lat: 47.528912, lng: -99.784012 },
+  OH: { lat: 40.388783, lng: -82.764915 }, OK: { lat: 35.565342, lng: -96.928917 },
+  OR: { lat: 44.572021, lng: -122.070938 }, PA: { lat: 40.590752, lng: -77.209755 },
+  RI: { lat: 41.680893, lng: -71.51178 }, SC: { lat: 33.856892, lng: -80.945007 },
+  SD: { lat: 44.299782, lng: -99.438828 }, TN: { lat: 35.747845, lng: -86.692345 },
+  TX: { lat: 31.054487, lng: -97.563461 }, UT: { lat: 40.150032, lng: -111.862434 },
+  VT: { lat: 44.045876, lng: -72.710686 }, VA: { lat: 37.769337, lng: -78.169968 },
+  WA: { lat: 47.400902, lng: -121.490494 }, WV: { lat: 38.491226, lng: -80.954453 },
+  WI: { lat: 44.268543, lng: -89.616508 }, WY: { lat: 42.755966, lng: -107.30249 },
+  DC: { lat: 38.897438, lng: -77.026817 },
+}
+
+function normalizeState(s?: string | null): string | null {
+  if (!s) return null
+  const trimmed = s.trim().toUpperCase()
+  if (US_STATE_CENTROIDS[trimmed]) return trimmed
+  // Try full name → abbreviation
+  const NAME_TO_CODE: Record<string, string> = {
+    ALABAMA: 'AL', ALASKA: 'AK', ARIZONA: 'AZ', ARKANSAS: 'AR', CALIFORNIA: 'CA', COLORADO: 'CO',
+    CONNECTICUT: 'CT', DELAWARE: 'DE', FLORIDA: 'FL', GEORGIA: 'GA', HAWAII: 'HI', IDAHO: 'ID',
+    ILLINOIS: 'IL', INDIANA: 'IN', IOWA: 'IA', KANSAS: 'KS', KENTUCKY: 'KY', LOUISIANA: 'LA',
+    MAINE: 'ME', MARYLAND: 'MD', MASSACHUSETTS: 'MA', MICHIGAN: 'MI', MINNESOTA: 'MN',
+    MISSISSIPPI: 'MS', MISSOURI: 'MO', MONTANA: 'MT', NEBRASKA: 'NE', NEVADA: 'NV',
+    'NEW HAMPSHIRE': 'NH', 'NEW JERSEY': 'NJ', 'NEW MEXICO': 'NM', 'NEW YORK': 'NY',
+    'NORTH CAROLINA': 'NC', 'NORTH DAKOTA': 'ND', OHIO: 'OH', OKLAHOMA: 'OK', OREGON: 'OR',
+    PENNSYLVANIA: 'PA', 'RHODE ISLAND': 'RI', 'SOUTH CAROLINA': 'SC', 'SOUTH DAKOTA': 'SD',
+    TENNESSEE: 'TN', TEXAS: 'TX', UTAH: 'UT', VERMONT: 'VT', VIRGINIA: 'VA', WASHINGTON: 'WA',
+    'WEST VIRGINIA': 'WV', WISCONSIN: 'WI', WYOMING: 'WY',
+    'DISTRICT OF COLUMBIA': 'DC', 'WASHINGTON DC': 'DC', 'WASHINGTON, DC': 'DC',
+  }
+  return NAME_TO_CODE[trimmed] || null
+}
+
+function CliniciansMap({
+  clinicians,
+  onPinPress,
+}: {
+  clinicians: Clinician[]
+  onPinPress: (id: string) => void
+}) {
+  // Group clinicians by state and jitter pins slightly so overlap is visible
+  const pins = clinicians
+    .map((c) => {
+      const code = normalizeState(c.location_state)
+      if (!code) return null
+      const base = US_STATE_CENTROIDS[code]
+      // deterministic jitter so the same clinician renders in the same spot
+      const hash = c.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+      const jitterLat = ((hash % 100) / 100 - 0.5) * 0.8
+      const jitterLng = (((hash * 7) % 100) / 100 - 0.5) * 0.8
+      return {
+        id: c.id,
+        name: c.full_name,
+        license: c.license_type,
+        city: c.location_city,
+        state: code,
+        lat: base.lat + jitterLat,
+        lng: base.lng + jitterLng,
+      }
+    })
+    .filter((p): p is NonNullable<typeof p> => !!p)
+
+  return (
+    <View style={{ flex: 1 }}>
+      <MapView
+        style={{ flex: 1 }}
+        initialRegion={{
+          latitude: 39.8283,
+          longitude: -98.5795,
+          latitudeDelta: 40,
+          longitudeDelta: 50,
+        }}
+      >
+        {pins.map((p) => (
+          <Marker
+            key={p.id}
+            coordinate={{ latitude: p.lat, longitude: p.lng }}
+            title={p.name}
+            description={[p.license, [p.city, p.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+            onCalloutPress={() => onPinPress(p.id)}
+          />
+        ))}
+      </MapView>
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 12,
+          left: 12,
+          right: 12,
+          backgroundColor: colors.white,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingHorizontal: 12,
+          paddingVertical: 8,
+        }}
+      >
+        <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center' }}>
+          Pins are approximate (state-level). Tap a pin, then tap the callout to view the profile.
+        </Text>
+      </View>
     </View>
   )
 }
