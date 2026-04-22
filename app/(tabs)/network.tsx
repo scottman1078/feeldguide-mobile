@@ -811,21 +811,63 @@ export default function NetworkScreen() {
             onChangeText={setSearch}
             placeholder={searchPlaceholder}
             placeholderTextColor={colors.textMuted}
-            style={{ flex: 1, padding: 12, fontSize: 15, color: colors.textPrimary }}
+            allowFontScaling={false}
+            style={{
+              flex: 1,
+              paddingVertical: 12,
+              paddingHorizontal: 8,
+              fontSize: 15,
+              color: colors.textPrimary,
+              letterSpacing: 0,
+              textAlign: 'left',
+            }}
           />
         </View>
       </View>
+
+      {/* List/Map toggle (visible in both views) */}
+      {!isLoading ? (
+        <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
+          <CliniciansDisplayToggle value={cliniciansDisplay} onChange={setCliniciansDisplay} />
+        </View>
+      ) : null}
 
       {/* Content */}
       {isLoading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.teal} />
         </View>
+      ) : cliniciansDisplay === 'map' ? (
+        <LocationMap
+          pins={
+            viewMode === 'my_network'
+              ? filteredConnections.map((c) => ({
+                  id: c.otherProfile.id,
+                  full_name: c.otherProfile.full_name,
+                  license_type: c.otherProfile.license_type,
+                  location_city: c.otherProfile.location_city,
+                  location_state: c.otherProfile.location_state,
+                }))
+              : filteredClinicians.map((c) => ({
+                  id: c.id,
+                  full_name: c.full_name,
+                  license_type: c.license_type,
+                  location_city: c.location_city,
+                  location_state: c.location_state,
+                }))
+          }
+          onPinPress={(id) => router.push(`/clinician?userId=${id}` as any)}
+          emptyMessage={
+            viewMode === 'my_network'
+              ? 'No connections to map yet — invite colleagues to see them here.'
+              : 'No clinicians match your filters.'
+          }
+        />
       ) : viewMode === 'my_network' ? (
         <FlatList
           data={filteredConnections}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 }}
           ListHeaderComponent={<MyNetworkHeader />}
           ListEmptyComponent={
             <View style={{ alignItems: 'center', paddingTop: 60 }}>
@@ -841,31 +883,19 @@ export default function NetworkScreen() {
           renderItem={renderConnection}
         />
       ) : (
-        <View style={{ flex: 1 }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
-            <CliniciansDisplayToggle value={cliniciansDisplay} onChange={setCliniciansDisplay} />
-          </View>
-          {cliniciansDisplay === 'map' ? (
-            <CliniciansMap
-              clinicians={filteredClinicians}
-              onPinPress={(id) => router.push(`/clinician?userId=${id}` as any)}
-            />
-          ) : (
-            <FlatList
-              data={filteredClinicians}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 }}
-              ListHeaderComponent={<InviteCTA />}
-              ListEmptyComponent={
-                <View style={{ alignItems: 'center', paddingTop: 60 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textSecondary }}>No clinicians found</Text>
-                  <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Try a different search</Text>
-                </View>
-              }
-              renderItem={renderClinician}
-            />
-          )}
-        </View>
+        <FlatList
+          data={filteredClinicians}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 }}
+          ListHeaderComponent={<InviteCTA />}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', paddingTop: 60 }}>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textSecondary }}>No clinicians found</Text>
+              <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>Try a different search</Text>
+            </View>
+          }
+          renderItem={renderClinician}
+        />
       )}
     </View>
   )
@@ -984,28 +1014,36 @@ function normalizeState(s?: string | null): string | null {
   return NAME_TO_CODE[trimmed] || null
 }
 
-function CliniciansMap({
-  clinicians,
+interface MapPin {
+  id: string
+  full_name: string
+  license_type: string | null
+  location_city: string | null
+  location_state: string | null
+}
+
+function LocationMap({
+  pins,
   onPinPress,
+  emptyMessage,
 }: {
-  clinicians: Clinician[]
+  pins: MapPin[]
   onPinPress: (id: string) => void
+  emptyMessage: string
 }) {
-  // Group clinicians by state and jitter pins slightly so overlap is visible
-  const pins = clinicians
-    .map((c) => {
-      const code = normalizeState(c.location_state)
+  const placedPins = pins
+    .map((p) => {
+      const code = normalizeState(p.location_state)
       if (!code) return null
       const base = US_STATE_CENTROIDS[code]
-      // deterministic jitter so the same clinician renders in the same spot
-      const hash = c.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+      const hash = p.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
       const jitterLat = ((hash % 100) / 100 - 0.5) * 0.8
       const jitterLng = (((hash * 7) % 100) / 100 - 0.5) * 0.8
       return {
-        id: c.id,
-        name: c.full_name,
-        license: c.license_type,
-        city: c.location_city,
+        id: p.id,
+        name: p.full_name,
+        license: p.license_type,
+        city: p.location_city,
         state: code,
         lat: base.lat + jitterLat,
         lng: base.lng + jitterLng,
@@ -1024,12 +1062,14 @@ function CliniciansMap({
           longitudeDelta: 50,
         }}
       >
-        {pins.map((p) => (
+        {placedPins.map((p) => (
           <Marker
             key={p.id}
             coordinate={{ latitude: p.lat, longitude: p.lng }}
             title={p.name}
-            description={[p.license, [p.city, p.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+            description={[p.license, [p.city, p.state].filter(Boolean).join(', ')]
+              .filter(Boolean)
+              .join(' · ')}
             onCalloutPress={() => onPinPress(p.id)}
           />
         ))}
@@ -1049,7 +1089,9 @@ function CliniciansMap({
         }}
       >
         <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center' }}>
-          Pins are approximate (state-level). Tap a pin, then tap the callout to view the profile.
+          {placedPins.length === 0
+            ? emptyMessage
+            : 'Pins are approximate (state-level). Tap a pin, then tap the callout to view the profile.'}
         </Text>
       </View>
     </View>
