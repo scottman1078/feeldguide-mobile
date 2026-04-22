@@ -15,6 +15,10 @@ import {
   Shield,
   Send,
   Sparkles,
+  UserPlus,
+  Handshake,
+  CheckCircle2,
+  Lightbulb,
 } from 'lucide-react-native'
 import { HeaderBar } from '../../src/components/header-bar'
 import { colors } from '../../src/lib/colors'
@@ -22,8 +26,9 @@ import { supabase } from '../../src/lib/supabase'
 
 // ─── Types ───────────────────────────────────────────────
 
-type FilterTab = 'all' | 'opportunities' | 'insights'
+type FilterTab = 'all' | 'opportunities' | 'activity' | 'insights'
 type Urgency = 'routine' | 'urgent' | 'crisis'
+type ActivityType = 'signup' | 'partnership' | 'referral_completed' | 'tip'
 
 interface ReferralOpportunity {
   id: string
@@ -38,13 +43,41 @@ interface ReferralOpportunity {
   poster_id: string
 }
 
+interface ActivityItem {
+  id: string
+  type: ActivityType
+  description: string
+  actors: string[]
+  created_at: string
+}
+
+type FeedItem =
+  | { kind: 'opportunity'; created_at: string; data: ReferralOpportunity }
+  | { kind: 'activity'; created_at: string; data: ActivityItem }
+
 // ─── Constants ───────────────────────────────────────────
 
 const TABS: { value: FilterTab; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'opportunities', label: 'Opportunities' },
+  { value: 'activity', label: 'Activity' },
   { value: 'insights', label: 'Insights' },
 ]
+
+const PLATFORM_TIPS = [
+  'Complete your profile to appear higher in search results.',
+  'Invite 3 colleagues to grow your network.',
+  'Add your insurance panels to attract more referrals.',
+  'Update your specialties to help others find you.',
+  'Respond to referral opportunities to build your reputation.',
+]
+
+const ACTIVITY_META: Record<ActivityType, { Icon: typeof UserPlus; bg: string; text: string }> = {
+  signup: { Icon: UserPlus, bg: '#eff6ff', text: '#2563eb' },
+  partnership: { Icon: Handshake, bg: '#ecfdf5', text: '#059669' },
+  referral_completed: { Icon: CheckCircle2, bg: '#ccfbf1', text: '#0d9488' },
+  tip: { Icon: Lightbulb, bg: '#fef3c7', text: '#d97706' },
+}
 
 const URGENCY_META: Record<Urgency, { label: string; Icon: typeof Clock; bg: string; text: string; border: string }> = {
   routine: {
@@ -277,6 +310,50 @@ function OpportunityCard({ post, onPress }: { post: ReferralOpportunity; onPress
   )
 }
 
+// ─── Activity Card ───────────────────────────────────────
+
+function ActivityCard({ item }: { item: ActivityItem }) {
+  const meta = ACTIVITY_META[item.type]
+  const Icon = meta.Icon
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.white,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 16,
+        marginBottom: 12,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
+      }}
+    >
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: meta.bg,
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <Icon size={16} color={meta.text} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 13, color: colors.textPrimary, lineHeight: 20 }}>
+          {item.description}
+        </Text>
+        <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
+          {formatRelativeTime(item.created_at)}
+        </Text>
+      </View>
+    </View>
+  )
+}
+
 // ─── Insights Placeholder ────────────────────────────────
 
 function InsightsPlaceholder() {
@@ -346,6 +423,7 @@ export default function FeedScreen() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const [opportunities, setOpportunities] = useState<ReferralOpportunity[]>([])
+  const [activities, setActivities] = useState<ActivityItem[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -391,9 +469,107 @@ export default function FeedScreen() {
     setOpportunities(mapped)
   }, [])
 
+  const fetchActivity = useCallback(async () => {
+    const items: ActivityItem[] = []
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    try {
+      const { data: signups } = await supabase
+        .from('fg_profiles')
+        .select('id, full_name, created_at')
+        .eq('onboarding_completed', true)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (signups) {
+        for (const s of signups as any[]) {
+          items.push({
+            id: `signup-${s.id}`,
+            type: 'signup',
+            description: `${s.full_name || 'A new clinician'} joined FeeldGuide`,
+            actors: [s.full_name || 'New member'],
+            created_at: s.created_at,
+          })
+        }
+      }
+
+      const { data: partnerships } = await supabase
+        .from('fg_partnerships')
+        .select(
+          'id, accepted_at, requester_id, recipient_id, requester:fg_profiles!fg_partnerships_requester_id_fkey ( full_name ), recipient:fg_profiles!fg_partnerships_recipient_id_fkey ( full_name )'
+        )
+        .eq('status', 'accepted')
+        .gte('accepted_at', sevenDaysAgo)
+        .order('accepted_at', { ascending: false })
+        .limit(10)
+
+      if (partnerships) {
+        for (const p of partnerships as any[]) {
+          const requester = p.requester?.full_name || 'Someone'
+          const recipient = p.recipient?.full_name || 'someone'
+          items.push({
+            id: `partnership-${p.id}`,
+            type: 'partnership',
+            description: `${requester} and ${recipient} formed a partnership`,
+            actors: [requester, recipient],
+            created_at: p.accepted_at,
+          })
+        }
+      }
+
+      const { data: referrals } = await supabase
+        .from('fg_referrals')
+        .select(
+          'id, updated_at, stage, sender_id, receiver_id, sender:fg_profiles!fg_referrals_sender_id_fkey ( full_name ), receiver:fg_profiles!fg_referrals_receiver_id_fkey ( full_name )'
+        )
+        .in('stage', ['completed', 'accepted'])
+        .gte('updated_at', sevenDaysAgo)
+        .order('updated_at', { ascending: false })
+        .limit(10)
+
+      if (referrals) {
+        for (const r of referrals as any[]) {
+          const sender = r.sender?.full_name || 'Someone'
+          const receiver = r.receiver?.full_name || 'someone'
+          items.push({
+            id: `referral-${r.id}`,
+            type: 'referral_completed',
+            description: `A referral between ${sender} and ${receiver} was ${r.stage}`,
+            actors: [sender, receiver],
+            created_at: r.updated_at,
+          })
+        }
+      }
+
+      const tipIndex = Math.floor(Math.random() * PLATFORM_TIPS.length)
+      items.push({
+        id: `tip-${tipIndex}`,
+        type: 'tip',
+        description: PLATFORM_TIPS[tipIndex],
+        actors: [],
+        created_at: new Date().toISOString(),
+      })
+      const tipIndex2 = (tipIndex + 2) % PLATFORM_TIPS.length
+      items.push({
+        id: `tip-${tipIndex2}`,
+        type: 'tip',
+        description: PLATFORM_TIPS[tipIndex2],
+        actors: [],
+        created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+
+      items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      setActivities(items)
+    } catch (err) {
+      console.error('Failed to fetch activity:', err)
+      setActivities([])
+    }
+  }, [])
+
   const loadAll = useCallback(async () => {
-    await fetchOpportunities()
-  }, [fetchOpportunities])
+    await Promise.all([fetchOpportunities(), fetchActivity()])
+  }, [fetchOpportunities, fetchActivity])
 
   useEffect(() => {
     setLoading(true)
@@ -413,10 +589,22 @@ export default function FeedScreen() {
     [router]
   )
 
-  const visibleData = useMemo(() => {
+  const visibleData = useMemo<FeedItem[]>(() => {
     if (activeTab === 'insights') return []
-    return opportunities
-  }, [activeTab, opportunities])
+    if (activeTab === 'opportunities') {
+      return opportunities.map((o) => ({ kind: 'opportunity' as const, created_at: o.created_at, data: o }))
+    }
+    if (activeTab === 'activity') {
+      return activities.map((a) => ({ kind: 'activity' as const, created_at: a.created_at, data: a }))
+    }
+    // 'all' → merge, sort descending
+    const merged: FeedItem[] = [
+      ...opportunities.map((o) => ({ kind: 'opportunity' as const, created_at: o.created_at, data: o })),
+      ...activities.map((a) => ({ kind: 'activity' as const, created_at: a.created_at, data: a })),
+    ]
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    return merged
+  }, [activeTab, opportunities, activities])
 
   const renderHeader = () => (
     <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
@@ -468,15 +656,15 @@ export default function FeedScreen() {
         </View>
       )
     }
+    const message =
+      activeTab === 'opportunities'
+        ? 'No open referral opportunities right now.'
+        : activeTab === 'activity'
+        ? 'No recent activity.'
+        : 'Your feed is empty. Check back soon!'
     return (
       <View style={{ paddingHorizontal: 20 }}>
-        <EmptyState
-          message={
-            activeTab === 'opportunities'
-              ? 'No open referral opportunities right now.'
-              : 'No activity yet. Check back soon!'
-          }
-        />
+        <EmptyState message={message} />
       </View>
     )
   }
@@ -486,13 +674,17 @@ export default function FeedScreen() {
       <HeaderBar />
       <FlatList
         data={visibleData}
-        keyExtractor={(item) => `opp-${item.id}`}
+        keyExtractor={(item) => `${item.kind}-${item.data.id}`}
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={renderEmpty}
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 20 }}>
-            <OpportunityCard post={item} onPress={() => handleOpportunityPress(item.id)} />
+            {item.kind === 'opportunity' ? (
+              <OpportunityCard post={item.data} onPress={() => handleOpportunityPress(item.data.id)} />
+            ) : (
+              <ActivityCard item={item.data} />
+            )}
           </View>
         )}
         refreshControl={
