@@ -4,6 +4,7 @@ import { ArrowLeft, Camera, LogOut, X } from 'lucide-react-native'
 import { colors } from '../src/lib/colors'
 import { useAuth } from '../src/contexts/auth-context'
 import { supabase } from '../src/lib/supabase'
+import { PlacesAutocomplete } from '../src/components/places-autocomplete'
 import { useRouter } from 'expo-router'
 import { useEffect, useState, useCallback, useRef } from 'react'
 
@@ -509,14 +510,21 @@ export default function SettingsScreen() {
           <FieldLabel text="Practice Name" />
           <StyledInput value={practiceName} onChangeText={setPracticeName} placeholder="Practice name" />
 
-          <FieldLabel text="City" />
-          <StyledInput value={city} onChangeText={setCity} placeholder="City" />
-
-          <FieldLabel text="State" />
-          <StyledInput value={state} onChangeText={setState} placeholder="State" autoCapitalize="characters" />
-
-          <FieldLabel text="ZIP Code" />
-          <StyledInput value={zip} onChangeText={setZip} placeholder="ZIP code" keyboardType="number-pad" />
+          <FieldLabel text="Location" />
+          <PlacesAutocomplete
+            value={city ? `${city}, ${state}${zip ? ' ' + zip : ''}` : ''}
+            onChange={(place) => {
+              setCity(place.city)
+              setState(place.state)
+              setZip(place.zip)
+            }}
+            placeholder="Search city..."
+          />
+          {city && state ? (
+            <Text style={{ fontSize: 12, color: colors.teal, fontWeight: '600', marginTop: 6 }}>
+              ✓ {city}, {state}{zip ? ` ${zip}` : ''}
+            </Text>
+          ) : null}
 
           <View style={{ marginTop: 8 }}>
             <ToggleRow label="Telehealth Available" value={telehealthAvailable} onToggle={() => setTelehealthAvailable(telehealthAvailable ? 0 : 1)} />
