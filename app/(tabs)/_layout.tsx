@@ -7,6 +7,7 @@ import { colors } from '../../src/lib/colors'
 import { supabase } from '../../src/lib/supabase'
 import { useAuth } from '../../src/contexts/auth-context'
 import { TrialBanner } from '../../src/components/trial-banner'
+import { shouldHoldOnWaitlist } from '../../src/lib/waitlist'
 
 const tabs = [
   { name: 'feed', label: 'Feed', Icon: Rss },
@@ -21,6 +22,22 @@ export default function TabLayout() {
   const pathname = usePathname()
   const { profile } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
+
+  // Gate: incomplete onboarding bounces to /onboarding. Admins skip this.
+  useEffect(() => {
+    if (!profile) return
+    if (!profile.is_admin && !profile.onboarding_completed) {
+      router.replace('/onboarding' as any)
+    }
+  }, [profile, router])
+
+  // Pre-launch waitlist gate: completed users land on /waitlist until launch.
+  useEffect(() => {
+    if (!profile?.onboarding_completed) return
+    if (shouldHoldOnWaitlist({ email: profile.email, isAdmin: !!profile.is_admin })) {
+      router.replace('/waitlist' as any)
+    }
+  }, [profile, router])
 
   // Soft lockout: bounce expired users to the reactivate screen.
   useEffect(() => {
