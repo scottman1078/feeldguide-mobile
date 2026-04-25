@@ -181,25 +181,47 @@ export default function ReferralsScreen() {
     }
 
     setSubmitting(true)
-    const { error } = await supabase.from('fg_referrals').insert({
-      from_therapist_id: user.id,
-      to_therapist_id: selectedRecipient.id,
-      client_initials: clientInitials.trim().toUpperCase(),
-      presenting_concerns: selectedConcerns.length > 0 ? selectedConcerns : null,
-      urgency: urgency,
-      insurance_type: insuranceType.trim() || null,
-      stage: 'referral_sent',
-    })
 
-    setSubmitting(false)
+    // POST to the web API (same backend as web) so the recipient gets the
+    // full notification fan-out (in-app + Postmark email + SMS + Slack).
+    // A direct supabase insert would skip dispatchNotification entirely.
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
 
-    if (error) {
-      Alert.alert('Error', 'Failed to send referral. Please try again.')
-    } else {
+      const res = await fetch('https://www.feeldguide.com/api/referrals/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          toTherapistId: selectedRecipient.id,
+          clientInitials: clientInitials.trim().toUpperCase(),
+          presentingConcerns: selectedConcerns,
+          insurance: insuranceType.trim() || null,
+          urgency: urgency.toLowerCase(),
+          notes: notes.trim() || null,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        Alert.alert('Could not send referral', data.error || 'Please try again.')
+        return
+      }
+
       setShowCreate(false)
       resetForm()
       fetchReferrals()
       Alert.alert('Referral Sent', `Referral sent to ${selectedRecipient.full_name}.`)
+    } catch (err) {
+      Alert.alert(
+        "Couldn't send referral",
+        err instanceof Error ? err.message : 'Please try again.',
+      )
+    } finally {
+      setSubmitting(false)
     }
   }
 
