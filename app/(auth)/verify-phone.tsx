@@ -60,7 +60,9 @@ export default function VerifyPhoneScreen() {
         return
       }
 
-      router.replace('/(tabs)/feed')
+      // New signups start onboarding. If they've already completed it, the
+      // (tabs) layout gate will fast-forward them to /feed.
+      router.replace('/onboarding' as any)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

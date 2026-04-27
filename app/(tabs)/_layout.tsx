@@ -12,7 +12,7 @@ import { shouldHoldOnWaitlist } from '../../src/lib/waitlist'
 const tabs = [
   { name: 'feed', label: 'Feed', Icon: Rss },
   { name: 'network', label: 'Network', Icon: Users },
-  { name: 'referrals', label: 'Referrals', Icon: Send },
+  { name: 'referrals', label: 'Referrals', Icon: Send, clinicianOnly: true },
   { name: 'messages', label: 'Messages', Icon: MessageSquare },
   { name: 'more', label: 'More', Icon: MoreHorizontal },
 ]
@@ -48,6 +48,18 @@ export default function TabLayout() {
     }
   }, [profile?.subscription_status, pathname, router])
 
+  // Supporter gate: bounce supporters off clinician-only screens (Referrals).
+  // Catches direct deep-links and stale tab state alike.
+  useEffect(() => {
+    if (profile?.user_tier !== 'supporter') return
+    if (pathname.includes('referrals')) {
+      router.replace('/(tabs)/feed' as any)
+    }
+  }, [profile?.user_tier, pathname, router])
+
+  const isSupporter = profile?.user_tier === 'supporter'
+  const visibleTabs = tabs.filter((t) => !(isSupporter && t.clinicianOnly))
+
   useEffect(() => {
     if (!profile?.id) return
 
@@ -79,7 +91,7 @@ export default function TabLayout() {
         paddingBottom: 4,
         paddingTop: 8,
       }}>
-        {tabs.map(({ name, label, Icon }) => {
+        {visibleTabs.map(({ name, label, Icon }) => {
           const active = pathname.includes(name)
           const badge = name === 'messages' && unreadCount > 0 ? unreadCount : 0
           return (
