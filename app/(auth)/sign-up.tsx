@@ -12,14 +12,7 @@ import {
 import { useRouter } from 'expo-router'
 import { colors } from '../../src/lib/colors'
 import { apiSignup } from '../../src/lib/api'
-
-function formatPhone(val: string): string {
-  const digits = val.replace(/\D/g, '').slice(0, 10)
-  if (digits.length > 6) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
-  if (digits.length > 3) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
-  if (digits.length > 0) return `(${digits}`
-  return ''
-}
+import { supabase } from '../../src/lib/supabase'
 
 export default function SignUpScreen() {
   const router = useRouter()
@@ -27,12 +20,12 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const phoneDigits = phone.replace(/\D/g, '')
-  const canSubmit = fullName.trim() && email.trim() && password.length >= 8 && phoneDigits.length === 10
+  // Phone is collected on the verify-phone screen so the same step covers
+  // both this email signup and the Google OAuth funnel.
+  const canSubmit = fullName.trim() && email.trim() && password.length >= 8
 
   const handleSignUp = async () => {
     if (!canSubmit) return
@@ -43,7 +36,6 @@ export default function SignUpScreen() {
       const data = await apiSignup({
         email: email.trim().toLowerCase(),
         fullName: fullName.trim(),
-        phone,
         password,
       })
 
@@ -56,15 +48,18 @@ export default function SignUpScreen() {
         return
       }
 
-      // Navigate to phone verification with params
-      router.push({
-        pathname: '/(auth)/verify-phone',
-        params: {
-          phone: data.phone || phone,
-          email: email.trim().toLowerCase(),
-          password,
-        },
+      // Sign in so verify-phone has an authenticated session to write
+      // phone_verified against.
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
       })
+      if (signInErr) {
+        setError('Account created, but sign-in failed. Please sign in manually.')
+        return
+      }
+
+      router.push('/(auth)/verify-phone' as any)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
@@ -174,24 +169,8 @@ export default function SignUpScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Phone */}
-          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Phone
-          </Text>
-          <TextInput
-            value={phone}
-            onChangeText={(val) => setPhone(formatPhone(val))}
-            placeholder="(555) 555-0000"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="phone-pad"
-            style={{
-              backgroundColor: colors.background,
-              borderWidth: 1, borderColor: colors.border, borderRadius: 10,
-              padding: 14, fontSize: 15, color: colors.textPrimary, marginBottom: 8,
-            }}
-          />
           <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 16 }}>
-            We'll send a verification code to confirm your number.
+            Next, we'll text you a 6-digit code to verify your phone.
           </Text>
 
           {/* Error */}
