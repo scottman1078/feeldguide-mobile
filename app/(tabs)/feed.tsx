@@ -15,7 +15,6 @@ import {
   AlertCircle,
   Shield,
   Send,
-  Sparkles,
   UserPlus,
   Handshake,
   CheckCircle2,
@@ -65,8 +64,8 @@ type FeedItem =
 const TABS: { value: FilterTab; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'opportunities', label: 'Referral Board' },
-  { value: 'activity', label: 'Activity' },
-  { value: 'insights', label: 'Insights' },
+  { value: 'insights', label: 'AI Insights' },
+  { value: 'activity', label: 'Website Activity' },
 ]
 
 const PLATFORM_TIPS = [
@@ -385,47 +384,44 @@ function ActivityCard({ item }: { item: ActivityItem }) {
   )
 }
 
-// ─── Insights Placeholder ────────────────────────────────
+// ─── AI Insights (tips) ──────────────────────────────────
 
-function InsightsPlaceholder() {
+function InsightsList() {
   return (
-    <View
-      style={{
-        backgroundColor: colors.white,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-        padding: 24,
-        alignItems: 'center',
-      }}
-    >
-      <View
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: colors.tealLight,
-          justifyContent: 'center',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <Sparkles size={26} color={colors.teal} />
-      </View>
-      <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 }}>
-        AI insights coming soon
-      </Text>
-      <Text
-        style={{
-          fontSize: 13,
-          color: colors.textSecondary,
-          textAlign: 'center',
-          lineHeight: 20,
-        }}
-      >
-        We're building personalized intelligence from your referral patterns, network growth, and market signals. Check back after Insights launches.
-      </Text>
-    </View>
+    <>
+      {PLATFORM_TIPS.map((tip, idx) => (
+        <View
+          key={idx}
+          style={{
+            backgroundColor: colors.white,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 20,
+            marginBottom: 12,
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: 12,
+          }}
+        >
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: '#FDE68A33',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Lightbulb size={18} color="#D97706" />
+          </View>
+          <Text style={{ flex: 1, fontSize: 14, color: colors.textPrimary, lineHeight: 20 }}>
+            {tip}
+          </Text>
+        </View>
+      ))}
+    </>
   )
 }
 
@@ -576,23 +572,6 @@ export default function FeedScreen() {
           })
         }
       }
-
-      const tipIndex = Math.floor(Math.random() * PLATFORM_TIPS.length)
-      items.push({
-        id: `tip-${tipIndex}`,
-        type: 'tip',
-        description: PLATFORM_TIPS[tipIndex],
-        actors: [],
-        created_at: new Date().toISOString(),
-      })
-      const tipIndex2 = (tipIndex + 2) % PLATFORM_TIPS.length
-      items.push({
-        id: `tip-${tipIndex2}`,
-        type: 'tip',
-        description: PLATFORM_TIPS[tipIndex2],
-        actors: [],
-        created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      })
 
       items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       setActivities(items)
@@ -755,11 +734,22 @@ export default function FeedScreen() {
       >
         {TABS.map((tab) => {
           const active = activeTab === tab.value
+          const count =
+            tab.value === 'all'
+              ? opportunities.length + activities.length
+              : tab.value === 'opportunities'
+                ? opportunities.length
+                : tab.value === 'activity'
+                  ? activities.length
+                  : PLATFORM_TIPS.length
           return (
             <TouchableOpacity
               key={tab.value}
               onPress={() => setActiveTab(tab.value)}
               style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
                 paddingHorizontal: 14,
                 paddingVertical: 8,
                 borderRadius: 999,
@@ -777,6 +767,27 @@ export default function FeedScreen() {
               >
                 {tab.label}
               </Text>
+              <View
+                style={{
+                  minWidth: 20,
+                  height: 18,
+                  paddingHorizontal: 6,
+                  borderRadius: 999,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: active ? 'rgba(255,255,255,0.25)' : colors.background,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    color: active ? colors.white : colors.textMuted,
+                  }}
+                >
+                  {count}
+                </Text>
+              </View>
             </TouchableOpacity>
           )
         })}
@@ -828,7 +839,7 @@ export default function FeedScreen() {
 
       {activeTab === 'insights' ? (
         <View style={{ paddingHorizontal: 20 }}>
-          <InsightsPlaceholder />
+          <InsightsList />
         </View>
       ) : null}
     </View>

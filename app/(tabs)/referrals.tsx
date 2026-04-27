@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, FlatList, ActivityIndicator,
   Modal, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native'
-import { Send, ArrowDownLeft, ArrowUpRight, Plus, X, ChevronDown, AlertTriangle, Shield } from 'lucide-react-native'
+import { Send, ArrowDownLeft, ArrowUpRight, Plus, X, ChevronDown, AlertTriangle, Shield, Users } from 'lucide-react-native'
 import { supabase } from '../../src/lib/supabase'
 import { colors } from '../../src/lib/colors'
 import { useAuth } from '../../src/contexts/auth-context'
@@ -65,7 +65,9 @@ export default function ReferralsScreen() {
   // Create form state
   const [connections, setConnections] = useState<ConnectionOption[]>([])
   const [recipientSearch, setRecipientSearch] = useState('')
-  const [selectedRecipient, setSelectedRecipient] = useState<ConnectionOption | null>(null)
+  // Multi-recipient: pick one or more connections per referral. Mirrors the web wizard's
+  // `direct-multi` mode and the network screen's "Refer to my network" CTA.
+  const [selectedRecipients, setSelectedRecipients] = useState<ConnectionOption[]>([])
   const [clientInitials, setClientInitials] = useState('')
   const [selectedConcerns, setSelectedConcerns] = useState<string[]>([])
   const [urgency, setUrgency] = useState<'Routine' | 'Urgent' | 'Crisis'>('Routine')
@@ -151,12 +153,19 @@ export default function ReferralsScreen() {
   const receivedThisMonth = receivedReferrals.filter(r => r.created_at >= monthStart).length
 
   const filteredRecipients = connections.filter(c => {
+    if (selectedRecipients.some(r => r.id === c.id)) return false
     if (!recipientSearch.trim()) return true
     return c.full_name.toLowerCase().includes(recipientSearch.toLowerCase())
   })
 
+  const toggleRecipient = (c: ConnectionOption) => {
+    setSelectedRecipients(prev =>
+      prev.some(r => r.id === c.id) ? prev.filter(r => r.id !== c.id) : [...prev, c]
+    )
+  }
+
   const resetForm = () => {
-    setSelectedRecipient(null)
+    setSelectedRecipients([])
     setRecipientSearch('')
     setClientInitials('')
     setSelectedConcerns([])
@@ -167,8 +176,8 @@ export default function ReferralsScreen() {
   }
 
   const handleCreateReferral = async () => {
-    if (!user || !selectedRecipient) {
-      Alert.alert('Missing Info', 'Please select a recipient.')
+    if (!user || selectedRecipients.length === 0) {
+      Alert.alert('Missing Info', 'Please select at least one recipient.')
       return
     }
     if (!clientInitials.trim()) {
@@ -189,20 +198,27 @@ export default function ReferralsScreen() {
       const { data: sessionData } = await supabase.auth.getSession()
       const token = sessionData.session?.access_token
 
+      const isMulti = selectedRecipients.length > 1
+      const body: Record<string, unknown> = {
+        clientInitials: clientInitials.trim().toUpperCase(),
+        presentingConcerns: selectedConcerns,
+        insurance: insuranceType.trim() || null,
+        urgency: urgency.toLowerCase(),
+        notes: notes.trim() || null,
+      }
+      if (isMulti) {
+        body.toTherapistIds = selectedRecipients.map(r => r.id)
+      } else {
+        body.toTherapistId = selectedRecipients[0].id
+      }
+
       const res = await fetch('https://www.feeldguide.com/api/referrals/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({
-          toTherapistId: selectedRecipient.id,
-          clientInitials: clientInitials.trim().toUpperCase(),
-          presentingConcerns: selectedConcerns,
-          insurance: insuranceType.trim() || null,
-          urgency: urgency.toLowerCase(),
-          notes: notes.trim() || null,
-        }),
+        body: JSON.stringify(body),
       })
 
       if (!res.ok) {
@@ -211,10 +227,14 @@ export default function ReferralsScreen() {
         return
       }
 
+      const successMessage = isMulti
+        ? `Referral sent to ${selectedRecipients.length} clinicians.`
+        : `Referral sent to ${selectedRecipients[0].full_name}.`
+
       setShowCreate(false)
       resetForm()
       fetchReferrals()
-      Alert.alert('Referral Sent', `Referral sent to ${selectedRecipient.full_name}.`)
+      Alert.alert('Referral Sent', successMessage)
     } catch (err) {
       Alert.alert(
         "Couldn't send referral",
@@ -524,75 +544,102 @@ export default function ReferralsScreen() {
             </View>
 
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
-              {/* Recipient */}
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 8 }}>
-                Recipient *
-              </Text>
-              {selectedRecipient ? (
+              {/* Recipients (multi-select) */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+                  Recipients * {selectedRecipients.length > 0 ? `(${selectedRecipients.length})` : ''}
+                </Text>
+                {connections.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSelectedRecipients(connections)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  >
+                    <Users size={14} color={colors.teal} />
+                    <Text style={{ fontSize: 13, color: colors.teal, fontWeight: '600' }}>
+                      Refer to my network
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {selectedRecipients.length > 0 && (
                 <View style={{
                   flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: colors.tealLight,
-                  borderRadius: 10,
-                  padding: 12,
-                  marginBottom: 16,
+                  flexWrap: 'wrap',
+                  gap: 6,
+                  marginBottom: 12,
                 }}>
-                  <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: colors.teal }}>
-                    {selectedRecipient.full_name}
-                  </Text>
-                  <TouchableOpacity onPress={() => { setSelectedRecipient(null); setRecipientSearch('') }}>
-                    <X size={18} color={colors.teal} />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={{ marginBottom: 16 }}>
-                  <TextInput
-                    value={recipientSearch}
-                    onChangeText={setRecipientSearch}
-                    placeholder="Search your connections..."
-                    placeholderTextColor={colors.textMuted}
-                    style={{
-                      backgroundColor: colors.white,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 10,
-                      padding: 12,
-                      fontSize: 15,
-                      color: colors.textPrimary,
-                    }}
-                  />
-                  {recipientSearch.trim().length > 0 ? (
-                    <View style={{
-                      backgroundColor: colors.white,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 10,
-                      marginTop: 4,
-                      maxHeight: 160,
-                    }}>
-                      {filteredRecipients.length > 0 ? (
-                        filteredRecipients.slice(0, 5).map(c => (
-                          <TouchableOpacity
-                            key={c.id}
-                            onPress={() => { setSelectedRecipient(c); setRecipientSearch('') }}
-                            style={{
-                              padding: 12,
-                              borderBottomWidth: 1,
-                              borderBottomColor: colors.border,
-                            }}
-                          >
-                            <Text style={{ fontSize: 14, color: colors.textPrimary }}>{c.full_name}</Text>
-                          </TouchableOpacity>
-                        ))
-                      ) : (
-                        <View style={{ padding: 12 }}>
-                          <Text style={{ fontSize: 13, color: colors.textMuted }}>No connections found</Text>
-                        </View>
-                      )}
+                  {selectedRecipients.map(r => (
+                    <View
+                      key={r.id}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: colors.tealLight,
+                        borderRadius: 16,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        gap: 6,
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal }}>
+                        {r.full_name}
+                      </Text>
+                      <TouchableOpacity onPress={() => toggleRecipient(r)}>
+                        <X size={14} color={colors.teal} />
+                      </TouchableOpacity>
                     </View>
-                  ) : null}
+                  ))}
                 </View>
               )}
+
+              <View style={{ marginBottom: 16 }}>
+                <TextInput
+                  value={recipientSearch}
+                  onChangeText={setRecipientSearch}
+                  placeholder={selectedRecipients.length > 0 ? 'Add another recipient...' : 'Search your connections...'}
+                  placeholderTextColor={colors.textMuted}
+                  style={{
+                    backgroundColor: colors.white,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 10,
+                    padding: 12,
+                    fontSize: 15,
+                    color: colors.textPrimary,
+                  }}
+                />
+                {recipientSearch.trim().length > 0 ? (
+                  <View style={{
+                    backgroundColor: colors.white,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 10,
+                    marginTop: 4,
+                    maxHeight: 160,
+                  }}>
+                    {filteredRecipients.length > 0 ? (
+                      filteredRecipients.slice(0, 5).map(c => (
+                        <TouchableOpacity
+                          key={c.id}
+                          onPress={() => { toggleRecipient(c); setRecipientSearch('') }}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: 1,
+                            borderBottomColor: colors.border,
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, color: colors.textPrimary }}>{c.full_name}</Text>
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <View style={{ padding: 12 }}>
+                        <Text style={{ fontSize: 13, color: colors.textMuted }}>No connections found</Text>
+                      </View>
+                    )}
+                  </View>
+                ) : null}
+              </View>
 
               {/* Client Initials */}
               <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 8 }}>
