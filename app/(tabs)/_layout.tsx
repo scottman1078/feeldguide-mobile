@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { View, Text, TouchableOpacity } from 'react-native'
-import { LayoutGrid, Send, Users, MessageSquare, MoreHorizontal } from 'lucide-react-native'
+import { Rss, Send, Users, MessageSquare, MoreHorizontal } from 'lucide-react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors } from '../../src/lib/colors'
 import { supabase } from '../../src/lib/supabase'
@@ -10,7 +10,7 @@ import { TrialBanner } from '../../src/components/trial-banner'
 import { shouldHoldOnWaitlist } from '../../src/lib/waitlist'
 
 const tabs = [
-  { name: 'feed', label: 'Feed', Icon: LayoutGrid },
+  { name: 'feed', label: 'Feed', Icon: Rss },
   { name: 'network', label: 'Network', Icon: Users },
   { name: 'referrals', label: 'Referrals', Icon: Send, clinicianOnly: true },
   { name: 'messages', label: 'Messages', Icon: MessageSquare },
