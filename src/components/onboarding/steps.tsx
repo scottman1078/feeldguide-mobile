@@ -337,11 +337,23 @@ function ProfessionTypeStep({ data, setData, advance }: StepProps) {
 }
 
 function LicenseTypeStep({ data, setData, advance, back }: StepProps) {
+  const [professions, setProfessions] = useState<
+    Array<{ id: string; full_name: string; abbreviation: string; is_auxiliary: boolean }>
+  >([])
+
+  useEffect(() => {
+    fetchProfessions().then(setProfessions).catch(() => {})
+  }, [])
+
+  const options = professions.length > 0
+    ? professions.map((p) => p.abbreviation)
+    : (LICENSE_TYPES as readonly string[])
+
   return (
     <View>
       <StepHeader title="License type" subtitle="Pick the credential you practice under." />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {LICENSE_TYPES.map((t) => (
+        {options.map((t) => (
           <Pill
             key={t}
             label={t}
