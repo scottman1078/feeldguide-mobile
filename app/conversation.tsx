@@ -31,7 +31,7 @@ interface PartnerProfile {
 }
 
 export default function ConversationScreen() {
-  const { userId, userName } = useLocalSearchParams<{ userId?: string; userName?: string }>()
+  const { userId, userName, draft } = useLocalSearchParams<{ userId?: string; userName?: string; draft?: string }>()
   const router = useRouter()
   const { user } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
@@ -42,6 +42,20 @@ export default function ConversationScreen() {
   const flatListRef = useRef<FlatList>(null)
 
   const myId = user?.id
+
+  // Prefill the input from a ?draft= param (e.g., the Accept button on a
+  // referral board post seeds a contextual reply). Only on first mount and
+  // only if the input is empty so we never clobber typing.
+  useEffect(() => {
+    if (!draft) return
+    if (messageText) return
+    try {
+      setMessageText(decodeURIComponent(draft))
+    } catch {
+      setMessageText(draft)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft])
 
   // Fetch partner profile
   useEffect(() => {

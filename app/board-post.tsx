@@ -129,9 +129,33 @@ export default function BoardPostDetailScreen() {
   }
 
   const handleMessagePoster = () => {
-    if (poster) {
-      router.push(`/conversation?userId=${poster.id}&userName=${encodeURIComponent(poster.full_name || '')}` as any)
+    if (!poster || !post) return
+    // Prefill the message with the referral context so the responder can ask
+    // questions and the original poster sees what's being referenced. Mirrors
+    // the web Accept-button draft behavior.
+    const firstName = (poster.full_name || '').split(' ')[0] || 'there'
+    const concerns = (post.presenting_concerns as string[] | null)?.length
+      ? (post.presenting_concerns as string[]).join(', ')
+      : null
+    const lines = [
+      `Hi ${firstName},`,
+      '',
+      `I saw your referral post for ${post.client_initials || 'your client'} and I'd like to take it on.`,
+    ]
+    const detail: string[] = []
+    if (post.urgency) detail.push(`Urgency: ${String(post.urgency)}`)
+    if (concerns) detail.push(`Concerns: ${concerns}`)
+    if (post.insurance_type) detail.push(`Insurance: ${post.insurance_type}`)
+    if (detail.length) {
+      lines.push('')
+      for (const d of detail) lines.push(`• ${d}`)
     }
+    lines.push('')
+    lines.push('Happy to discuss next steps — let me know a good time.')
+    const draft = encodeURIComponent(lines.join('\n'))
+    router.push(
+      `/conversation?userId=${poster.id}&userName=${encodeURIComponent(poster.full_name || '')}&draft=${draft}` as any
+    )
   }
 
   if (loading) {

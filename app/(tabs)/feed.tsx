@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   RefreshControl,
   ScrollView,
 } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import {
   Clock,
   AlertTriangle,
@@ -653,6 +653,23 @@ export default function FeedScreen() {
     setLoading(true)
     loadAll().finally(() => setLoading(false))
   }, [loadAll])
+
+  // Refetch opportunities + my posts when returning to the feed tab — covers
+  // the round-trip from /new-board-post where the user just posted a referral
+  // and expects to see it. Without this, the screen stayed mounted with stale
+  // state and clinicians had to pull-to-refresh.
+  // hasFocusedOnce skips the initial focus (loadAll above already handles it).
+  const hasFocusedOnce = useRef(false)
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnce.current) {
+        hasFocusedOnce.current = true
+        return
+      }
+      fetchOpportunities()
+      fetchMyPosts()
+    }, [fetchOpportunities, fetchMyPosts])
+  )
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
