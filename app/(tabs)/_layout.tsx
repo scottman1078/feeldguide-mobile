@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Slot, useRouter, usePathname } from 'expo-router'
 import { View, Text, TouchableOpacity } from 'react-native'
-import { Rss, Send, Users, MessageSquare, MoreHorizontal } from 'lucide-react-native'
+import { Rss, Send, Users, Inbox, MoreHorizontal } from 'lucide-react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors } from '../../src/lib/colors'
 import { supabase } from '../../src/lib/supabase'
@@ -9,11 +9,15 @@ import { useAuth } from '../../src/contexts/auth-context'
 import { TrialBanner } from '../../src/components/trial-banner'
 import { shouldHoldOnWaitlist } from '../../src/lib/waitlist'
 
+// Order matches the web bottom-nav: Network leftmost (default landing
+// surface for new users), then Board, then the user's working pipeline,
+// then Inbox (combined Messages + Notifications — Notifications page on
+// mobile is TODO; for now Inbox routes straight to messages).
 const tabs = [
-  { name: 'feed', label: 'Board', Icon: Rss },
   { name: 'network', label: 'Network', Icon: Users },
+  { name: 'feed', label: 'Board', Icon: Rss },
   { name: 'referrals', label: 'Referrals', Icon: Send, clinicianOnly: true },
-  { name: 'messages', label: 'Messages', Icon: MessageSquare },
+  { name: 'messages', label: 'Inbox', Icon: Inbox },
   { name: 'more', label: 'More', Icon: MoreHorizontal },
 ]
 
