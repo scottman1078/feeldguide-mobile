@@ -10,7 +10,7 @@ import { TrialBanner } from '../../src/components/trial-banner'
 import { shouldHoldOnWaitlist } from '../../src/lib/waitlist'
 
 const tabs = [
-  { name: 'feed', label: 'Feed', Icon: Rss },
+  { name: 'feed', label: 'Board', Icon: Rss },
   { name: 'network', label: 'Network', Icon: Users },
   { name: 'referrals', label: 'Referrals', Icon: Send, clinicianOnly: true },
   { name: 'messages', label: 'Messages', Icon: MessageSquare },

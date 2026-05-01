@@ -61,11 +61,10 @@ type FeedItem =
 
 // ─── Constants ───────────────────────────────────────────
 
+// Insights + Website Activity moved to the daily digest email; only the
+// Referral Board content stays as the page's primary surface.
 const TABS: { value: FilterTab; label: string }[] = [
-  { value: 'all', label: 'All' },
   { value: 'opportunities', label: 'Referral Board' },
-  { value: 'insights', label: 'AI Insights' },
-  { value: 'activity', label: 'Website Activity' },
 ]
 
 const PLATFORM_TIPS = [
@@ -449,7 +448,7 @@ function EmptyState({ message }: { message: string }) {
 export default function FeedScreen() {
   const router = useRouter()
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<FilterTab>('all')
+  const [activeTab, setActiveTab] = useState<FilterTab>('opportunities')
   const [boardScope, setBoardScope] = useState<BoardScope>('all')
   const [opportunities, setOpportunities] = useState<ReferralOpportunity[]>([])
   const [myPosts, setMyPosts] = useState<ReferralOpportunity[]>([])
@@ -722,7 +721,9 @@ export default function FeedScreen() {
           marginBottom: 12,
         }}
       >
-        <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary }}>Feed</Text>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary }}>
+          Referral Board
+        </Text>
         <TouchableOpacity
           onPress={() => router.push('/new-board-post' as any)}
           style={{
@@ -730,15 +731,13 @@ export default function FeedScreen() {
             alignItems: 'center',
             gap: 4,
             backgroundColor: colors.teal,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
             borderRadius: 10,
           }}
         >
           <Plus size={14} color={colors.white} />
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.white }}>
-            Post a Referral
-          </Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.white }}>Post</Text>
         </TouchableOpacity>
       </View>
 

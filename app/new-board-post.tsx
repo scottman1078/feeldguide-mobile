@@ -16,11 +16,28 @@ import { supabase } from '../src/lib/supabase'
 import { useAuth } from '../src/contexts/auth-context'
 
 type Urgency = 'routine' | 'urgent' | 'crisis'
+// Mirrors the web wizard's destination picker. 'one-person' isn't on
+// this screen yet — for direct 1-to-1 referrals, mobile users open a
+// clinician's profile and tap Refer.
+type Destination = 'network' | 'outside'
 
 const URGENCY_OPTIONS: { value: Urgency; label: string; Icon: typeof Clock; color: string }[] = [
   { value: 'routine', label: 'Routine', Icon: Clock, color: '#2563eb' },
   { value: 'urgent', label: 'Urgent', Icon: AlertTriangle, color: '#d97706' },
   { value: 'crisis', label: 'Crisis', Icon: AlertCircle, color: '#dc2626' },
+]
+
+const DESTINATION_OPTIONS: { value: Destination; title: string; subtitle: string }[] = [
+  {
+    value: 'network',
+    title: 'Everyone in my network',
+    subtitle: 'First connection to accept claims it',
+  },
+  {
+    value: 'outside',
+    title: 'Outside my network',
+    subtitle: 'Posted to the Referral Board for non-connections',
+  },
 ]
 
 export default function NewBoardPostScreen() {
@@ -31,6 +48,7 @@ export default function NewBoardPostScreen() {
   const [concerns, setConcerns] = useState('')
   const [insurance, setInsurance] = useState('')
   const [description, setDescription] = useState('')
+  const [destination, setDestination] = useState<Destination>('outside')
   const [hipaaConfirmed, setHipaaConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -79,6 +97,12 @@ export default function NewBoardPostScreen() {
         .map((c) => c.trim())
         .filter(Boolean)
 
+      // expires_at — 72h for network posts (FCFS time-sensitive), 7d for
+      // outside-network posts. Mirrors the web wizard.
+      const expiresAt = new Date(
+        Date.now() + (destination === 'network' ? 72 : 168) * 60 * 60 * 1000
+      ).toISOString()
+
       const { error } = await supabase.from('fg_marketplace_posts').insert({
         posting_therapist_id: user.id,
         client_initials: clientInitials.trim() || null,
@@ -87,8 +111,9 @@ export default function NewBoardPostScreen() {
         urgency,
         age_group: 'Adult',
         description: description.trim() || null,
-        visibility: 'public',
+        visibility: destination === 'network' ? 'network' : 'public',
         status: 'open',
+        expires_at: expiresAt,
       })
 
       if (error) throw error
@@ -277,6 +302,72 @@ export default function NewBoardPostScreen() {
             marginBottom: 16,
           }}
         />
+
+        {/* Destination — mirrors the web 3-destination picker */}
+        <Text
+          style={{
+            fontSize: 13,
+            fontWeight: '700',
+            color: colors.textPrimary,
+            marginBottom: 8,
+          }}
+        >
+          Where to send this
+        </Text>
+        <View style={{ gap: 8, marginBottom: 16 }}>
+          {DESTINATION_OPTIONS.map((opt) => {
+            const active = destination === opt.value
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                onPress={() => setDestination(opt.value)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  padding: 12,
+                  borderRadius: 8,
+                  borderWidth: active ? 2 : 1,
+                  borderColor: active ? colors.teal : colors.border,
+                  backgroundColor: active ? colors.tealLight ?? '#e0f7f5' : colors.white,
+                }}
+              >
+                <View
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    borderWidth: 2,
+                    marginTop: 2,
+                    borderColor: active ? colors.teal : colors.border,
+                    backgroundColor: active ? colors.teal : 'transparent',
+                  }}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: '700',
+                      color: active ? colors.teal : colors.textPrimary,
+                    }}
+                  >
+                    {opt.title}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: colors.textMuted,
+                      marginTop: 2,
+                      lineHeight: 14,
+                    }}
+                  >
+                    {opt.subtitle}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
 
         {/* HIPAA confirm */}
         <TouchableOpacity
