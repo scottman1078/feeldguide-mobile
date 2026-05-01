@@ -27,6 +27,20 @@ interface ConnectionOption {
   full_name: string
 }
 
+interface NetworkPost {
+  id: string
+  posting_therapist_id: string
+  posterName: string
+  client_initials: string | null
+  presenting_concerns: string[] | null
+  insurance_type: string | null
+  urgency: string | null
+  description: string | null
+  preferred_modality: string | null
+  age_group: string | null
+  created_at: string
+}
+
 const urgencyColors: Record<string, { bg: string; text: string }> = {
   high: { bg: '#fef2f2', text: '#dc2626' },
   medium: { bg: '#fffbeb', text: '#d97706' },
@@ -59,6 +73,10 @@ export default function ReferralsScreen() {
   const [referrals, setReferrals] = useState<Referral[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'sent' | 'received'>('sent')
+  // FCFS network posts available for the current user to claim — mirrors
+  // the web My Referrals 'Available from your network' panel.
+  const [networkPosts, setNetworkPosts] = useState<NetworkPost[]>([])
+  const [claimingPostId, setClaimingPostId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [stageDropdownId, setStageDropdownId] = useState<string | null>(null)
 
@@ -137,10 +155,155 @@ export default function ReferralsScreen() {
     }
   }, [user])
 
+  // FCFS network posts: visibility='network', open, from one of my
+  // connections, not yet expired, not in my dismissals.
+  const fetchNetworkPosts = useCallback(async () => {
+    if (!user?.id) {
+      setNetworkPosts([])
+      return
+    }
+
+    const { data: parts } = await supabase
+      .from('fg_partnerships')
+      .select('requesting_id, receiving_id')
+      .or(`requesting_id.eq.${user.id},receiving_id.eq.${user.id}`)
+      .in('status', ['accepted', 'active'])
+    const connectionIds = (parts || [])
+      .map((p: { requesting_id: string; receiving_id: string }) =>
+        p.requesting_id === user.id ? p.receiving_id : p.requesting_id
+      )
+      .filter(Boolean)
+    if (connectionIds.length === 0) {
+      setNetworkPosts([])
+      return
+    }
+
+    const { data: dismissed } = await supabase
+      .from('fg_marketplace_post_dismissals')
+      .select('post_id')
+      .eq('user_id', user.id)
+    const dismissedIds = (dismissed || []).map((r: { post_id: string }) => r.post_id)
+
+    let q = supabase
+      .from('fg_marketplace_posts')
+      .select(
+        'id, posting_therapist_id, client_initials, presenting_concerns, insurance_type, urgency, description, preferred_modality, age_group, created_at'
+      )
+      .eq('visibility', 'network')
+      .eq('status', 'open')
+      .gt('expires_at', new Date().toISOString())
+      .in('posting_therapist_id', connectionIds)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (dismissedIds.length > 0) {
+      q = q.not('id', 'in', `(${dismissedIds.join(',')})`)
+    }
+    const { data: rows } = await q
+    if (!rows || rows.length === 0) {
+      setNetworkPosts([])
+      return
+    }
+
+    const posterIds = [
+      ...new Set(rows.map((r: { posting_therapist_id: string }) => r.posting_therapist_id).filter(Boolean)),
+    ]
+    const { data: profiles } = await supabase
+      .from('fg_profiles')
+      .select('id, full_name')
+      .in('id', posterIds)
+    const nameMap = new Map((profiles || []).map((p: { id: string; full_name: string | null }) => [p.id, p.full_name]))
+
+    type MarketplaceRow = Omit<NetworkPost, 'posterName'>
+    const mapped: NetworkPost[] = rows.map((r: MarketplaceRow) => ({
+      ...r,
+      posterName: nameMap.get(r.posting_therapist_id) || 'Clinician',
+    }))
+    setNetworkPosts(mapped)
+  }, [user?.id])
+
+  const claimNetworkPost = useCallback(
+    async (postId: string) => {
+      if (!user?.id || claimingPostId) return
+      setClaimingPostId(postId)
+      const previous = networkPosts
+      setNetworkPosts((prev) => prev.filter((p) => p.id !== postId))
+
+      try {
+        // Atomic claim: status='awarded' WHERE status='open' AND
+        // expires_at > now. Mirrors /api/marketplace/claim on web.
+        const nowIso = new Date().toISOString()
+        const { data: claimed, error } = await supabase
+          .from('fg_marketplace_posts')
+          .update({
+            status: 'awarded',
+            awarded_responder_id: user.id,
+            awarded_at: nowIso,
+            updated_at: nowIso,
+          })
+          .eq('id', postId)
+          .eq('status', 'open')
+          .eq('visibility', 'network')
+          .gt('expires_at', nowIso)
+          .select(
+            'id, posting_therapist_id, client_initials, presenting_concerns, insurance_type, urgency, preferred_modality, age_group, description'
+          )
+          .maybeSingle()
+
+        if (error || !claimed) {
+          Alert.alert('Already claimed', 'Another clinician took this referral.')
+          setNetworkPosts(previous)
+          return
+        }
+
+        await supabase.from('fg_referrals').insert({
+          from_therapist_id: claimed.posting_therapist_id,
+          to_therapist_id: user.id,
+          client_initials: claimed.client_initials || '??',
+          presenting_concerns: claimed.presenting_concerns || [],
+          insurance_type: claimed.insurance_type || null,
+          urgency: claimed.urgency || 'routine',
+          preferred_modality: claimed.preferred_modality || null,
+          age_group: claimed.age_group || null,
+          notes: claimed.description || null,
+          stage: 'referral_accepted',
+          origin_post_id: postId,
+          accepted_at: nowIso,
+        })
+
+        fetchReferrals()
+      } catch (err) {
+        console.error('[claim] error:', err)
+        setNetworkPosts(previous)
+      } finally {
+        setClaimingPostId(null)
+      }
+    },
+    [user?.id, claimingPostId, networkPosts, fetchReferrals]
+  )
+
+  const declineNetworkPost = useCallback(
+    async (postId: string) => {
+      if (!user?.id) return
+      setNetworkPosts((prev) => prev.filter((p) => p.id !== postId))
+      try {
+        await supabase
+          .from('fg_marketplace_post_dismissals')
+          .upsert(
+            { user_id: user.id, post_id: postId },
+            { onConflict: 'user_id,post_id', ignoreDuplicates: true }
+          )
+      } catch {
+        /* soft-fail — already removed optimistically */
+      }
+    },
+    [user?.id]
+  )
+
   useEffect(() => {
     fetchReferrals()
     fetchConnections()
-  }, [fetchReferrals, fetchConnections])
+    fetchNetworkPosts()
+  }, [fetchReferrals, fetchConnections, fetchNetworkPosts])
 
   const sentReferrals = referrals.filter(r => r.from_therapist_id === user?.id)
   const receivedReferrals = referrals.filter(r => r.to_therapist_id === user?.id)
@@ -438,6 +601,103 @@ export default function ReferralsScreen() {
           <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginTop: 2 }}>Received This Month</Text>
         </View>
       </View>
+
+      {/* Available from your network — FCFS posts a connection sent to
+          their network. First clinician to Accept claims the referral. */}
+      {networkPosts.length > 0 && (
+        <View
+          style={{
+            marginHorizontal: 20,
+            marginTop: 14,
+            padding: 16,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: 'rgba(42, 161, 152, 0.4)',
+            backgroundColor: 'rgba(42, 161, 152, 0.08)',
+          }}
+        >
+          <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>
+            Available from your network
+          </Text>
+          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+            First to accept claims it · {networkPosts.length} waiting
+          </Text>
+
+          <View style={{ marginTop: 12, gap: 10 }}>
+            {networkPosts.map((p) => {
+              const isClaiming = claimingPostId === p.id
+              return (
+                <View
+                  key={p.id}
+                  style={{
+                    backgroundColor: colors.white,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    padding: 12,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
+                    {p.posterName}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                    Client {p.client_initials || '??'} ·{' '}
+                    <Text style={{ textTransform: 'capitalize' }}>{p.urgency || 'routine'}</Text>
+                  </Text>
+                  {p.description ? (
+                    <Text
+                      style={{ fontSize: 12, color: colors.textPrimary, marginTop: 6, lineHeight: 17 }}
+                      numberOfLines={2}
+                    >
+                      {p.description}
+                    </Text>
+                  ) : null}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'flex-end',
+                      gap: 8,
+                      marginTop: 10,
+                    }}
+                  >
+                    <TouchableOpacity
+                      onPress={() => declineNetworkPost(p.id)}
+                      disabled={isClaiming}
+                      style={{
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        opacity: isClaiming ? 0.4 : 1,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+                        Decline
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => claimNetworkPost(p.id)}
+                      disabled={isClaiming}
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        backgroundColor: colors.teal,
+                        opacity: isClaiming ? 0.5 : 1,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.white }}>
+                        {isClaiming ? '…' : 'Accept'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )
+            })}
+          </View>
+        </View>
+      )}
 
       {/* Sent / Received toggle */}
       <View style={{
