@@ -38,8 +38,13 @@ export default function BoardPostDetailScreen() {
   const [loading, setLoading] = useState(1)
   const [responseText, setResponseText] = useState('')
   const [sending, setSending] = useState(0)
-  const [sent, setSent] = useState(0)
   const [phiChecked, setPhiChecked] = useState(0)
+  // Viewer's existing application on this post — drives the Applied
+  // state machine (Applied · Awaiting decision · Withdraw) and skips
+  // the Apply form when present. Mirrors web feed/page.tsx myResponseId.
+  const [myResponseId, setMyResponseId] = useState<string | null>(null)
+  const [myResponseAt, setMyResponseAt] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(0)
 
   const fetchPost = useCallback(async () => {
     if (!postId) return
@@ -64,6 +69,30 @@ export default function BoardPostDetailScreen() {
   }, [postId])
 
   useEffect(() => { fetchPost() }, [fetchPost])
+
+  // Pull the viewer's existing application (if any) so the screen can
+  // render the Applied state instead of the Apply form. Re-runs whenever
+  // post or profile changes — keeps the state machine accurate after
+  // Withdraw → re-Apply cycles.
+  useEffect(() => {
+    if (!post?.id || !profile?.id) return
+    if (post.posting_therapist_id === profile.id) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('fg_marketplace_responses')
+        .select('id, created_at')
+        .eq('post_id', post.id)
+        .eq('therapist_id', profile.id)
+        .maybeSingle()
+      if (cancelled) return
+      setMyResponseId(data?.id || null)
+      setMyResponseAt(data?.created_at || null)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [post?.id, post?.posting_therapist_id, profile?.id])
 
   // When the viewer owns the post, load responses
   useEffect(() => {
@@ -107,25 +136,54 @@ export default function BoardPostDetailScreen() {
     }
   }, [post, profile?.id])
 
-  const handleRespond = async () => {
+  const handleApply = async () => {
     if (!responseText.trim() || !phiChecked || !profile?.id || !postId) return
     setSending(1)
     try {
-      const { error } = await supabase.from('fg_marketplace_responses').insert({
-        post_id: postId,
-        therapist_id: profile.id,
-        pitch: responseText.trim(),
-      })
-      if (error) {
-        Alert.alert('Error', error.message)
+      // Upsert by (post_id, therapist_id) — re-applying after a withdraw
+      // creates a fresh row. Mirrors web /api/marketplace/respond.
+      const { data, error } = await supabase
+        .from('fg_marketplace_responses')
+        .insert({
+          post_id: postId,
+          therapist_id: profile.id,
+          pitch: responseText.trim(),
+          status: 'pending',
+        })
+        .select('id, created_at')
+        .single()
+      if (error || !data) {
+        Alert.alert('Error', error?.message || 'Failed to apply')
       } else {
-        setSent(1)
+        setMyResponseId(data.id)
+        setMyResponseAt(data.created_at)
         setResponseText('')
       }
     } catch {
-      Alert.alert('Error', 'Failed to send response')
+      Alert.alert('Error', 'Failed to apply')
     }
     setSending(0)
+  }
+
+  const handleWithdraw = async () => {
+    if (!profile?.id || !postId || withdrawing) return
+    setWithdrawing(1)
+    try {
+      const { error } = await supabase
+        .from('fg_marketplace_responses')
+        .delete()
+        .eq('post_id', postId)
+        .eq('therapist_id', profile.id)
+      if (error) {
+        Alert.alert('Error', error.message)
+      } else {
+        setMyResponseId(null)
+        setMyResponseAt(null)
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to withdraw')
+    }
+    setWithdrawing(0)
   }
 
   const [pickingResponseId, setPickingResponseId] = useState<string | null>(null)
@@ -418,7 +476,7 @@ export default function BoardPostDetailScreen() {
         {isOwnPost ? (
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 }}>
-              Responses ({responses.length})
+              Applicants ({responses.length})
             </Text>
             {responses.length === 0 ? (
               <View
@@ -432,7 +490,7 @@ export default function BoardPostDetailScreen() {
                 }}
               >
                 <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
-                  No responses yet. You&apos;ll see them here when clinicians reach out.
+                  No applicants yet. You&apos;ll see them here when clinicians apply.
                 </Text>
               </View>
             ) : (
@@ -498,7 +556,7 @@ export default function BoardPostDetailScreen() {
                             }}
                           >
                             <Text style={{ fontSize: 13, fontWeight: '700', color: colors.white }}>
-                              {pickingResponseId === r.id ? '…' : 'Pick this clinician'}
+                              {pickingResponseId === r.id ? '…' : 'Pick'}
                             </Text>
                           </TouchableOpacity>
                         )}
@@ -556,19 +614,83 @@ export default function BoardPostDetailScreen() {
           </View>
         ) : null}
 
-        {/* Respond Section */}
-        {!isOwnPost && post.status === 'open' ? (
-          sent ? (
+        {/* Apply / Applied / Awarded section.
+            Mirrors the web 5-state machine on OpportunityCard:
+              - awarded-to-me  → "You were picked → Open My Referrals"
+              - awarded-to-other → "Closed · {OP} picked another applicant"
+              - open + applied → "Applied · Awaiting decision · Withdraw"
+              - open + not applied → Apply form */}
+        {!isOwnPost && post.status === 'awarded' ? (
+          post.awarded_responder_id === profile?.id ? (
+            <TouchableOpacity
+              onPress={() => router.push('/(tabs)/referrals' as any)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                backgroundColor: colors.teal,
+                borderRadius: 12,
+                paddingVertical: 14,
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.white }}>
+                You were picked → Open My Referrals
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{
+              backgroundColor: colors.white,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: colors.border,
+              padding: 20,
+              alignItems: 'center',
+            }}>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+                Closed · {(poster?.full_name || '').split(' ')[0] || 'The poster'} picked another applicant
+              </Text>
+            </View>
+          )
+        ) : !isOwnPost && post.status === 'open' ? (
+          myResponseId ? (
             <View style={{
               backgroundColor: '#f0fdf4',
               borderRadius: 16,
               borderWidth: 1,
               borderColor: '#bbf7d0',
               padding: 20,
-              alignItems: 'center',
             }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#16a34a' }}>Response Sent!</Text>
-              <Text style={{ fontSize: 13, color: '#4ade80', marginTop: 4 }}>The poster will be notified.</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#16a34a' }}>Applied</Text>
+              <Text style={{ fontSize: 13, color: '#4ade80', marginTop: 4 }}>
+                {myResponseAt
+                  ? `Submitted ${new Date(myResponseAt).toLocaleDateString()} · awaiting decision`
+                  : 'Awaiting decision'}
+              </Text>
+              <TouchableOpacity
+                onPress={handleWithdraw}
+                disabled={withdrawing ? true : false}
+                style={{
+                  marginTop: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  backgroundColor: colors.white,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  opacity: withdrawing ? 0.5 : 1,
+                }}
+              >
+                {withdrawing ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : null}
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>
+                  {withdrawing ? '…' : 'Withdraw'}
+                </Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={{
@@ -579,7 +701,7 @@ export default function BoardPostDetailScreen() {
               padding: 20,
             }}>
               <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 }}>
-                Respond to this Referral
+                Apply for this referral
               </Text>
 
               {/* PHI Disclaimer */}
@@ -596,14 +718,14 @@ export default function BoardPostDetailScreen() {
               }}>
                 <Shield size={16} color="#d97706" />
                 <Text style={{ fontSize: 12, color: '#92400e', flex: 1, lineHeight: 18 }}>
-                  Do not include patient names or identifying information in your response.
+                  Don&apos;t include patient names or identifying information in your pitch.
                 </Text>
               </View>
 
               <MultilineInput
                 value={responseText}
                 onChangeText={setResponseText}
-                placeholder="Describe your availability, experience, and why you'd be a good fit..."
+                placeholder="Why you're a fit — schedule, insurance, modality, anything that helps the poster decide."
               />
 
               {/* PHI Checkbox */}
@@ -624,12 +746,12 @@ export default function BoardPostDetailScreen() {
                   ) : null}
                 </View>
                 <Text style={{ fontSize: 12, color: colors.textSecondary, flex: 1, lineHeight: 18 }}>
-                  I confirm this response contains no HIPAA-protected health information
+                  I confirm this pitch contains no HIPAA-protected health information
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={handleRespond}
+                onPress={handleApply}
                 disabled={!responseText.trim() || !phiChecked || sending ? true : false}
                 style={{
                   flexDirection: 'row',
@@ -647,7 +769,7 @@ export default function BoardPostDetailScreen() {
                 ) : (
                   <Send size={18} color={colors.white} />
                 )}
-                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.white }}>Submit Response</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.white }}>Apply</Text>
               </TouchableOpacity>
             </View>
           )

@@ -72,7 +72,7 @@ const PLATFORM_TIPS = [
   'Invite 3 colleagues to grow your network.',
   'Add your insurance panels to attract more referrals.',
   'Update your specialties to help others find you.',
-  'Respond to referral opportunities to build your reputation.',
+  'Apply to referral opportunities to build your reputation.',
 ]
 
 const ACTIVITY_META: Record<ActivityType, { Icon: typeof UserPlus; bg: string; text: string }> = {
@@ -310,7 +310,7 @@ function OpportunityCard({ post, onPress }: { post: ReferralOpportunity; onPress
                 color: post.response_count > 0 ? colors.teal : colors.textMuted,
               }}
             >
-              {post.response_count} {post.response_count === 1 ? 'response' : 'responses'}
+              {post.response_count} {post.response_count === 1 ? 'applicant' : 'applicants'}
             </Text>
           </View>
         ) : null}
@@ -328,7 +328,7 @@ function OpportunityCard({ post, onPress }: { post: ReferralOpportunity; onPress
             }}
           >
             <Send size={12} color={colors.teal} />
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>Respond</Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>Apply</Text>
           </View>
         ) : null}
         {post.response_count !== undefined ? (
