@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -16,10 +16,13 @@ import { supabase } from '../src/lib/supabase'
 import { useAuth } from '../src/contexts/auth-context'
 
 type Urgency = 'routine' | 'urgent' | 'crisis'
-// Mirrors the web wizard's destination picker. 'one-person' isn't on
-// this screen yet — for direct 1-to-1 referrals, mobile users open a
-// clinician's profile and tap Refer.
-type Destination = 'network' | 'outside'
+// Mirrors the web wizard's 3-destination picker.
+type Destination = 'one-person' | 'network' | 'outside'
+
+interface ConnectionOption {
+  id: string
+  full_name: string
+}
 
 const URGENCY_OPTIONS: { value: Urgency; label: string; Icon: typeof Clock; color: string }[] = [
   { value: 'routine', label: 'Routine', Icon: Clock, color: '#2563eb' },
@@ -28,6 +31,11 @@ const URGENCY_OPTIONS: { value: Urgency; label: string; Icon: typeof Clock; colo
 ]
 
 const DESTINATION_OPTIONS: { value: Destination; title: string; subtitle: string }[] = [
+  {
+    value: 'one-person',
+    title: '1 person in my network',
+    subtitle: 'Send directly to one connected clinician',
+  },
   {
     value: 'network',
     title: 'Everyone in my network',
@@ -49,20 +57,68 @@ export default function NewBoardPostScreen() {
   const [insurance, setInsurance] = useState('')
   const [description, setDescription] = useState('')
   const [destination, setDestination] = useState<Destination>('outside')
+  const [connections, setConnections] = useState<ConnectionOption[]>([])
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>('')
   const [hipaaConfirmed, setHipaaConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  // Load connections for the 1-person picker.
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('fg_partnerships')
+        .select('requesting_id, receiving_id')
+        .or(`requesting_id.eq.${user.id},receiving_id.eq.${user.id}`)
+        .in('status', ['accepted', 'active'])
+      if (!data || cancelled) return
+      const otherIds = data
+        .map((p: { requesting_id: string; receiving_id: string }) =>
+          p.requesting_id === user.id ? p.receiving_id : p.requesting_id
+        )
+        .filter(Boolean)
+      if (otherIds.length === 0) {
+        setConnections([])
+        return
+      }
+      const { data: profiles } = await supabase
+        .from('fg_profiles')
+        .select('id, full_name')
+        .in('id', otherIds)
+      if (cancelled) return
+      setConnections(
+        (profiles || []).map((p: { id: string; full_name: string }) => ({
+          id: p.id,
+          full_name: p.full_name || 'Unknown',
+        }))
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
   const canSubmit =
-    hipaaConfirmed &&
     !submitting &&
-    (clientInitials.trim().length > 0 || concerns.trim().length > 0 || description.trim().length > 0)
+    (clientInitials.trim().length > 0 || concerns.trim().length > 0 || description.trim().length > 0) &&
+    (destination === 'one-person'
+      ? !!selectedConnectionId
+      : hipaaConfirmed)
 
   async function handleSubmit() {
     if (!user?.id) {
       Alert.alert('Not signed in', 'Please sign in to post a referral.')
       return
     }
-    if (!hipaaConfirmed) {
+    // 1-person flow doesn't need the PHI ack (the receiver is a known
+    // connection and notes aren't published to a board), but does need a
+    // selected connection.
+    if (destination === 'one-person' && !selectedConnectionId) {
+      Alert.alert('Pick a clinician', 'Select who in your network should receive this referral.')
+      return
+    }
+    if (destination !== 'one-person' && !hipaaConfirmed) {
       Alert.alert('HIPAA acknowledgement required', 'Confirm the HIPAA notice before posting.')
       return
     }
@@ -97,26 +153,42 @@ export default function NewBoardPostScreen() {
         .map((c) => c.trim())
         .filter(Boolean)
 
-      // expires_at — 72h for network posts (FCFS time-sensitive), 7d for
-      // outside-network posts. Mirrors the web wizard.
-      const expiresAt = new Date(
-        Date.now() + (destination === 'network' ? 72 : 168) * 60 * 60 * 1000
-      ).toISOString()
+      if (destination === 'one-person') {
+        // Direct 1-to-1 referral — creates an fg_referrals row that lands
+        // in the receiver's My Referrals → Received with stage='referral_sent'.
+        const { error } = await supabase.from('fg_referrals').insert({
+          from_therapist_id: user.id,
+          to_therapist_id: selectedConnectionId,
+          client_initials: (clientInitials.trim() || '??').toUpperCase(),
+          presenting_concerns: concernsArr.length > 0 ? concernsArr : [],
+          insurance_type: insurance.trim() || null,
+          urgency,
+          age_group: 'Adult',
+          notes: description.trim() || null,
+          stage: 'referral_sent',
+        })
+        if (error) throw error
+      } else {
+        // expires_at — 72h for network posts (FCFS time-sensitive), 7d for
+        // outside-network posts. Mirrors the web wizard.
+        const expiresAt = new Date(
+          Date.now() + (destination === 'network' ? 72 : 168) * 60 * 60 * 1000
+        ).toISOString()
 
-      const { error } = await supabase.from('fg_marketplace_posts').insert({
-        posting_therapist_id: user.id,
-        client_initials: clientInitials.trim() || null,
-        presenting_concerns: concernsArr.length > 0 ? concernsArr : null,
-        insurance_type: insurance.trim() || null,
-        urgency,
-        age_group: 'Adult',
-        description: description.trim() || null,
-        visibility: destination === 'network' ? 'network' : 'public',
-        status: 'open',
-        expires_at: expiresAt,
-      })
-
-      if (error) throw error
+        const { error } = await supabase.from('fg_marketplace_posts').insert({
+          posting_therapist_id: user.id,
+          client_initials: clientInitials.trim() || null,
+          presenting_concerns: concernsArr.length > 0 ? concernsArr : null,
+          insurance_type: insurance.trim() || null,
+          urgency,
+          age_group: 'Adult',
+          description: description.trim() || null,
+          visibility: destination === 'network' ? 'network' : 'public',
+          status: 'open',
+          expires_at: expiresAt,
+        })
+        if (error) throw error
+      }
 
       router.back()
     } catch (err: any) {
@@ -369,7 +441,81 @@ export default function NewBoardPostScreen() {
           })}
         </View>
 
-        {/* HIPAA confirm */}
+        {/* Connection picker — only when destination='one-person'. */}
+        {destination === 'one-person' && (
+          <View style={{ marginBottom: 16 }}>
+            <Text
+              style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 }}
+            >
+              Pick a clinician
+            </Text>
+            {connections.length === 0 ? (
+              <Text style={{ fontSize: 12, color: colors.textMuted, lineHeight: 16 }}>
+                You don&apos;t have any connections yet — visit Network to build your referral
+                network, then come back to refer to a specific person.
+              </Text>
+            ) : (
+              <View
+                style={{
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.white,
+                  maxHeight: 240,
+                  overflow: 'hidden',
+                }}
+              >
+                <ScrollView nestedScrollEnabled>
+                  {connections.map((c) => {
+                    const checked = selectedConnectionId === c.id
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        onPress={() => setSelectedConnectionId(c.id)}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 10,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          borderTopWidth: 1,
+                          borderTopColor: colors.border,
+                          backgroundColor: checked ? colors.tealLight ?? '#e0f7f5' : colors.white,
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: 8,
+                            borderWidth: 2,
+                            borderColor: checked ? colors.teal : colors.border,
+                            backgroundColor: checked ? colors.teal : 'transparent',
+                          }}
+                        />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: checked ? '700' : '500',
+                            color: colors.textPrimary,
+                            flex: 1,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {c.full_name}
+                        </Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* HIPAA confirm — not needed for 1-person referrals (the
+            recipient is a known connection and there's no public board). */}
+        {destination !== 'one-person' && (
         <TouchableOpacity
           onPress={() => setHipaaConfirmed((v) => !v)}
           style={{
@@ -400,6 +546,7 @@ export default function NewBoardPostScreen() {
             I confirm this post contains no PHI or identifying information and complies with HIPAA.
           </Text>
         </TouchableOpacity>
+        )}
 
         {/* Submit */}
         <TouchableOpacity
@@ -416,7 +563,11 @@ export default function NewBoardPostScreen() {
             <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={{ color: colors.white, fontSize: 15, fontWeight: '800' }}>
-              Post Referral
+              {destination === 'one-person'
+                ? 'Send Referral'
+                : destination === 'network'
+                  ? 'Send to my network'
+                  : 'Post to board'}
             </Text>
           )}
         </TouchableOpacity>
