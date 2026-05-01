@@ -128,6 +128,76 @@ export default function BoardPostDetailScreen() {
     setSending(0)
   }
 
+  const [pickingResponseId, setPickingResponseId] = useState<string | null>(null)
+
+  // OP picks a responder — mirrors web /api/marketplace/pick. Atomic
+  // UPDATE on the post (open → awarded), accepted on the picked response,
+  // declined on the rest, then materializes a fg_referrals row.
+  const pickResponder = async (responseId: string, therapistId: string) => {
+    if (!post || !profile?.id || pickingResponseId) return
+    if (post.status !== 'open') return
+    setPickingResponseId(responseId)
+    try {
+      const nowIso = new Date().toISOString()
+      const { data: claimed, error } = await supabase
+        .from('fg_marketplace_posts')
+        .update({
+          status: 'awarded',
+          awarded_responder_id: therapistId,
+          awarded_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq('id', post.id)
+        .eq('status', 'open')
+        .gt('expires_at', nowIso)
+        .select('id')
+        .maybeSingle()
+      if (error || !claimed) {
+        Alert.alert('Already awarded', 'This post has already been awarded.')
+        return
+      }
+
+      // Picked response → accepted.
+      await supabase
+        .from('fg_marketplace_responses')
+        .update({ status: 'accepted' })
+        .eq('id', responseId)
+
+      // All other responses for this post → declined.
+      await supabase
+        .from('fg_marketplace_responses')
+        .update({ status: 'declined' })
+        .eq('post_id', post.id)
+        .neq('id', responseId)
+        .eq('status', 'pending')
+
+      // Materialize the tracked referral.
+      await supabase.from('fg_referrals').insert({
+        from_therapist_id: post.posting_therapist_id,
+        to_therapist_id: therapistId,
+        client_initials: post.client_initials || '??',
+        presenting_concerns: post.presenting_concerns || [],
+        insurance_type: post.insurance_type || null,
+        urgency: post.urgency || 'routine',
+        preferred_modality: post.preferred_modality || null,
+        age_group: post.age_group || null,
+        notes: post.description || null,
+        stage: 'referral_accepted',
+        origin_post_id: post.id,
+        accepted_at: nowIso,
+      })
+
+      Alert.alert('Picked', 'Referral added to your pipeline.')
+      // Refetch post to reflect awarded state
+      fetchPost()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to pick'
+      Alert.alert('Error', msg)
+    } finally {
+      setPickingResponseId(null)
+    }
+  }
+
   const handleMessagePoster = () => {
     if (!poster || !post) return
     // Prefill the message with the referral context so the responder can ask
@@ -410,7 +480,28 @@ export default function BoardPostDetailScreen() {
                       {r.pitch}
                     </Text>
                     {r.therapist?.id ? (
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                        {post.status === 'open' && (
+                          <TouchableOpacity
+                            onPress={() => pickResponder(r.id, r.therapist!.id)}
+                            disabled={pickingResponseId !== null}
+                            style={{
+                              flexBasis: '100%',
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              backgroundColor: colors.teal,
+                              borderRadius: 10,
+                              paddingVertical: 10,
+                              opacity: pickingResponseId !== null ? 0.5 : 1,
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.white }}>
+                              {pickingResponseId === r.id ? '…' : 'Pick this clinician'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                           onPress={() =>
                             router.push(
@@ -423,13 +514,23 @@ export default function BoardPostDetailScreen() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: 6,
-                            backgroundColor: colors.teal,
+                            backgroundColor: post.status === 'open' ? colors.white : colors.teal,
+                            borderWidth: post.status === 'open' ? 1 : 0,
+                            borderColor: colors.border,
                             borderRadius: 10,
                             paddingVertical: 10,
                           }}
                         >
-                          <MessageSquare size={14} color={colors.white} />
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.white }}>Message</Text>
+                          <MessageSquare size={14} color={post.status === 'open' ? colors.textSecondary : colors.white} />
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontWeight: '700',
+                              color: post.status === 'open' ? colors.textSecondary : colors.white,
+                            }}
+                          >
+                            Message
+                          </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => router.push(`/clinician?userId=${r.therapist!.id}` as any)}
