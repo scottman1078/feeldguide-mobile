@@ -28,8 +28,17 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "color": "#2AA198"
+        }
+      ]
     ],
+    "notification": {
+      "iosDisplayInForeground": true
+    },
     "extra": {
       "router": {},
       "eas": {

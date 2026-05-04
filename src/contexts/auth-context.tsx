@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { registerExpoPushToken } from '../lib/push-registration'
 import { supabase } from '../lib/supabase'
 import type { Session, User } from '@supabase/supabase-js'
 
@@ -61,15 +62,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       setUser(s?.user ?? null)
-      if (s?.user) fetchProfile(s.user.id)
+      if (s?.user) {
+        fetchProfile(s.user.id)
+        registerExpoPushToken(s.user.id).catch(() => {})
+      }
       setLoading(0)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
       setUser(s?.user ?? null)
-      if (s?.user) fetchProfile(s.user.id)
-      else setProfile(null)
+      if (s?.user) {
+        fetchProfile(s.user.id)
+        registerExpoPushToken(s.user.id).catch(() => {})
+      } else setProfile(null)
     })
 
     return () => subscription.unsubscribe()
