@@ -46,6 +46,10 @@ export default function SettingsScreen() {
   const [directPay, setDirectPay] = useState(0)
   const [slidingScale, setSlidingScale] = useState(0)
 
+  // Caseload (manual signal — open slots = target - current)
+  const [targetCaseload, setTargetCaseload] = useState('')
+  const [currentCaseload, setCurrentCaseload] = useState('')
+
   // Session rates
   const [rateMin, setRateMin] = useState('')
   const [rateMax, setRateMax] = useState('')
@@ -98,7 +102,7 @@ export default function SettingsScreen() {
     try {
       const { data } = await supabase
         .from('fg_profiles')
-        .select('full_name, email, phone, gender, bio, practice_name, location_city, location_state, location_zip, telehealth_available, accepting_new_clients, direct_pay, sliding_scale, session_rate_min, session_rate_max, license_type, license_number, license_state, npi_number')
+        .select('full_name, email, phone, gender, bio, practice_name, location_city, location_state, location_zip, telehealth_available, accepting_new_clients, direct_pay, sliding_scale, session_rate_min, session_rate_max, license_type, license_number, license_state, npi_number, target_caseload, current_caseload')
         .eq('id', profile.id)
         .single()
 
@@ -118,6 +122,8 @@ export default function SettingsScreen() {
         setSlidingScale(data.sliding_scale ? 1 : 0)
         setRateMin(data.session_rate_min != null ? String(data.session_rate_min) : '')
         setRateMax(data.session_rate_max != null ? String(data.session_rate_max) : '')
+        setTargetCaseload(data.target_caseload != null ? String(data.target_caseload) : '')
+        setCurrentCaseload(data.current_caseload != null ? String(data.current_caseload) : '')
         setLicenseType(data.license_type || '')
         setLicenseNumber(data.license_number || '')
         setLicenseState(data.license_state || '')
@@ -194,6 +200,8 @@ export default function SettingsScreen() {
         accepting_new_clients: acceptingNewClients ? true : false,
         direct_pay: directPay ? true : false,
         sliding_scale: slidingScale ? true : false,
+        target_caseload: targetCaseload ? parseInt(targetCaseload, 10) : null,
+        current_caseload: currentCaseload ? parseInt(currentCaseload, 10) : null,
       }).eq('id', profile.id)
       if (error) throw error
       await refreshProfile()
@@ -531,6 +539,31 @@ export default function SettingsScreen() {
             <ToggleRow label="Accepting New Clients" value={acceptingNewClients} onToggle={() => setAcceptingNewClients(acceptingNewClients ? 0 : 1)} />
             <ToggleRow label="Direct Pay" value={directPay} onToggle={() => setDirectPay(directPay ? 0 : 1)} />
             <ToggleRow label="Sliding Scale" value={slidingScale} onToggle={() => setSlidingScale(slidingScale ? 0 : 1)} />
+          </View>
+
+          <View style={{ marginTop: 12 }}>
+            <FieldLabel text="Caseload (optional)" />
+            <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
+              Helps colleagues know when you have room for new clients.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <FieldLabel text="Target" />
+                <StyledInput value={targetCaseload} onChangeText={setTargetCaseload} placeholder="e.g. 12" keyboardType="number-pad" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <FieldLabel text="Current" />
+                <StyledInput value={currentCaseload} onChangeText={setCurrentCaseload} placeholder="e.g. 8" keyboardType="number-pad" />
+              </View>
+            </View>
+            {targetCaseload && currentCaseload ? (() => {
+              const slots = Math.max(0, (parseInt(targetCaseload, 10) || 0) - (parseInt(currentCaseload, 10) || 0))
+              return (
+                <Text style={{ fontSize: 13, fontWeight: '600', color: slots > 0 ? colors.teal : colors.textSecondary, marginTop: 6 }}>
+                  {slots > 0 ? `${slots} slot${slots === 1 ? '' : 's'} open` : 'At capacity'}
+                </Text>
+              )
+            })() : null}
           </View>
 
           <SaveButton label="Save Practice Info" onPress={savePracticeSection} saving={savingPractice} />

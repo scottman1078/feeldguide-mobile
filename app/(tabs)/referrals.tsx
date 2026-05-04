@@ -20,7 +20,17 @@ interface Referral {
   stage: string | null
   created_at: string
   otherName: string
+  handed_off_post_id: string | null
 }
+
+const HANDOFF_ELIGIBLE_STAGES = new Set([
+  'referral_accepted',
+  'client_contacted',
+  'intake_scheduled',
+  'accepted',
+  'contacted',
+  'scheduled',
+])
 
 interface ConnectionOption {
   id: string
@@ -100,7 +110,7 @@ export default function ReferralsScreen() {
 
     const { data } = await supabase
       .from('fg_referrals')
-      .select('id, from_therapist_id, to_therapist_id, client_initials, presenting_concerns, insurance_type, urgency, stage, created_at')
+      .select('id, from_therapist_id, to_therapist_id, client_initials, presenting_concerns, insurance_type, urgency, stage, created_at, handed_off_post_id')
       .or(`from_therapist_id.eq.${user.id},to_therapist_id.eq.${user.id}`)
       .order('created_at', { ascending: false })
 
@@ -422,6 +432,42 @@ export default function ReferralsScreen() {
     }
   }
 
+  const handleHandoff = (referralId: string) => {
+    Alert.alert(
+      'Hand off to network?',
+      'Posts a public board referral with your intake context. The original referrer will see who applies.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Post hand-off',
+          onPress: async () => {
+            try {
+              const { data } = await supabase.auth.getSession()
+              const token = data.session?.access_token
+              if (!token) {
+                Alert.alert('Error', 'You must be signed in.')
+                return
+              }
+              const res = await fetch(`https://www.feeldguide.com/api/referrals/${referralId}/handoff`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              })
+              const json = await res.json()
+              if (!res.ok) {
+                Alert.alert('Error', json.error || 'Hand-off failed.')
+                return
+              }
+              Alert.alert('Posted', 'The hand-off is on the Referral Board.')
+              fetchReferrals()
+            } catch (err) {
+              Alert.alert('Error', err instanceof Error ? err.message : 'Hand-off failed.')
+            }
+          },
+        },
+      ],
+    )
+  }
+
   const toggleConcern = (concern: string) => {
     setSelectedConcerns(prev =>
       prev.includes(concern) ? prev.filter(c => c !== concern) : [...prev, concern]
@@ -433,6 +479,10 @@ export default function ReferralsScreen() {
     const uColors = urgencyColors[item.urgency?.toLowerCase() ?? ''] ?? { bg: '#f1f5f9', text: '#64748b' }
     const sColors = stageColors[item.stage?.toLowerCase() ?? ''] ?? { bg: '#f1f5f9', text: '#64748b' }
     const showDropdown = stageDropdownId === item.id
+    const canHandoff = !isSent
+      && !item.handed_off_post_id
+      && item.stage != null
+      && HANDOFF_ELIGIBLE_STAGES.has(item.stage)
 
     return (
       <View
@@ -508,6 +558,41 @@ export default function ReferralsScreen() {
             </View>
           ))}
         </View>
+
+        {/* Hand-off action / status (received side only) */}
+        {!isSent && item.handed_off_post_id ? (
+          <View style={{
+            backgroundColor: '#fef3c7',
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 8,
+            marginBottom: 8,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#92400e' }}>
+              Handed off to network · view post on board
+            </Text>
+          </View>
+        ) : canHandoff ? (
+          <TouchableOpacity
+            onPress={() => handleHandoff(item.id)}
+            style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderRadius: 10,
+              marginBottom: 8,
+              alignSelf: 'flex-start',
+            }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textPrimary }}>
+              Not a fit — hand off to network
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Stage update dropdown */}
         {showDropdown ? (

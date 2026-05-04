@@ -45,6 +45,7 @@ interface ReferralOpportunity {
   poster_name: string
   poster_id: string
   response_count?: number
+  is_handoff: boolean
 }
 
 interface ActivityItem {
@@ -195,15 +196,31 @@ function OpportunityCard({ post, onPress }: { post: ReferralOpportunity; onPress
             </Text>
           </View>
         </View>
-        <View
-          style={{
-            backgroundColor: colors.tealLight,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-            borderRadius: 20,
-          }}
-        >
-          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal }}>Referral</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View
+            style={{
+              backgroundColor: colors.tealLight,
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              borderRadius: 20,
+            }}
+          >
+            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal }}>Referral</Text>
+          </View>
+          {post.is_handoff ? (
+            <View
+              style={{
+                backgroundColor: '#fef3c7',
+                borderWidth: 1,
+                borderColor: '#fde68a',
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 20,
+              }}
+            >
+              <Text style={{ fontSize: 9, fontWeight: '700', color: '#92400e' }}>Warm hand-off</Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -461,7 +478,7 @@ export default function FeedScreen() {
     const { data, error } = await supabase
       .from('fg_marketplace_posts')
       .select(
-        'id, client_initials, urgency, description, presenting_concerns, insurance_type, status, created_at, posting_therapist_id'
+        'id, client_initials, urgency, description, presenting_concerns, insurance_type, status, created_at, posting_therapist_id, is_handoff'
       )
       .eq('status', 'open')
       .order('created_at', { ascending: false })
@@ -495,6 +512,7 @@ export default function FeedScreen() {
       created_at: row.created_at,
       poster_name: nameMap.get(row.posting_therapist_id) || 'Clinician',
       poster_id: row.posting_therapist_id,
+      is_handoff: !!row.is_handoff,
     }))
     setOpportunities(mapped)
   }, [])
@@ -588,7 +606,7 @@ export default function FeedScreen() {
     const { data } = await supabase
       .from('fg_marketplace_posts')
       .select(
-        'id, client_initials, urgency, description, presenting_concerns, insurance_type, status, created_at, posting_therapist_id'
+        'id, client_initials, urgency, description, presenting_concerns, insurance_type, status, created_at, posting_therapist_id, is_handoff'
       )
       .eq('posting_therapist_id', user.id)
       .order('created_at', { ascending: false })
@@ -622,6 +640,7 @@ export default function FeedScreen() {
       poster_name: 'You',
       poster_id: row.posting_therapist_id,
       response_count: countByPost[row.id] || 0,
+      is_handoff: !!row.is_handoff,
     }))
     setMyPosts(mapped)
   }, [user?.id])

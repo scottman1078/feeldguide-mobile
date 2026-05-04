@@ -67,6 +67,8 @@ interface Clinician {
   telehealth_available: boolean
   trust_score: number
   bio: string | null
+  target_caseload: number | null
+  current_caseload: number | null
 }
 
 export default function NetworkScreen() {
@@ -76,6 +78,7 @@ export default function NetworkScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('my_network')
   const [cliniciansDisplay, setCliniciansDisplay] = useState<CliniciansDisplay>('list')
   const [search, setSearch] = useState('')
+  const [hasCapacityOnly, setHasCapacityOnly] = useState(false)
 
   // My Network state
   const [connections, setConnections] = useState<Connection[]>([])
@@ -165,7 +168,7 @@ export default function NetworkScreen() {
     setLoadingClinicians(true)
     const { data } = await supabase
       .from('fg_profiles')
-      .select('id, full_name, license_type, location_city, location_state, avatar_url, accepting_new_clients, telehealth_available, trust_score, bio')
+      .select('id, full_name, license_type, location_city, location_state, avatar_url, accepting_new_clients, telehealth_available, trust_score, bio, target_caseload, current_caseload')
       .eq('onboarding_completed', true)
       .eq('status', 'active')
       .order('trust_score', { ascending: false })
@@ -294,6 +297,11 @@ export default function NetworkScreen() {
   })
 
   const filteredClinicians = clinicians.filter(c => {
+    if (hasCapacityOnly) {
+      const t = c.target_caseload ?? null
+      const cur = c.current_caseload ?? null
+      if (t == null || cur == null || t <= cur) return false
+    }
     if (!search.trim()) return true
     const q = search.toLowerCase()
     return (
@@ -578,6 +586,25 @@ export default function NetworkScreen() {
                 <Text style={{ fontSize: 10, fontWeight: '600', color: '#16a34a' }}>Accepting</Text>
               </View>
             ) : null}
+            {(() => {
+              const t = item.target_caseload
+              const cur = item.current_caseload
+              if (t == null || cur == null) return null
+              const slots = Math.max(0, t - cur)
+              if (slots <= 0) return null
+              return (
+                <View style={{
+                  backgroundColor: colors.tealLight,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 8,
+                }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal }}>
+                    {slots} slot{slots === 1 ? '' : 's'} open
+                  </Text>
+                </View>
+              )
+            })()}
             {item.telehealth_available ? (
               <View style={{
                 backgroundColor: '#dbeafe',
@@ -829,6 +856,33 @@ export default function NetworkScreen() {
       {!isLoading ? (
         <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
           <CliniciansDisplayToggle value={cliniciansDisplay} onChange={setCliniciansDisplay} />
+        </View>
+      ) : null}
+
+      {/* Capacity filter chip — All Clinicians view only */}
+      {!isLoading && viewMode === 'all_clinicians' ? (
+        <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 4, flexDirection: 'row' }}>
+          <TouchableOpacity
+            onPress={() => setHasCapacityOnly(!hasCapacityOnly)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 20,
+              borderWidth: 1,
+              backgroundColor: hasCapacityOnly ? colors.teal : colors.white,
+              borderColor: hasCapacityOnly ? colors.teal : colors.border,
+            }}
+          >
+            <Text style={{
+              fontSize: 12,
+              fontWeight: '600',
+              color: hasCapacityOnly ? colors.white : colors.textSecondary,
+            }}>
+              Has open slots
+            </Text>
+          </TouchableOpacity>
         </View>
       ) : null}
 
