@@ -1,23 +1,34 @@
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native'
-import { User, Settings, UserPlus, HelpCircle, LogOut, ChevronRight } from 'lucide-react-native'
+import { User, Settings, UserPlus, HelpCircle, LogOut, Sparkles, ChevronRight } from 'lucide-react-native'
 import { colors } from '../../src/lib/colors'
 import { useAuth } from '../../src/contexts/auth-context'
 import { useRouter } from 'expo-router'
 import { HeaderBar } from '../../src/components/header-bar'
 
-const menuItems = [
-  { key: 'profile', label: 'My Profile', Icon: User, route: '/profile' },
-  { key: 'settings', label: 'Settings', Icon: Settings, route: '/settings' },
-  { key: 'invite', label: 'Invite Colleagues', Icon: UserPlus, route: '/invite' },
-  { key: 'help', label: 'Help Center', Icon: HelpCircle, route: '/help' },
-  { key: 'signout', label: 'Sign Out', Icon: LogOut, route: null, action: 'signout' },
-] as const
+interface MenuItem {
+  key: string
+  label: string
+  Icon: typeof User
+  route: string | null
+  action?: 'signout'
+}
 
 export default function MoreScreen() {
-  const { signOut } = useAuth()
+  const { signOut, profile } = useAuth()
   const router = useRouter()
 
-  const handlePress = async (item: typeof menuItems[number]) => {
+  const menuItems: MenuItem[] = [
+    { key: 'profile', label: 'My Profile', Icon: User, route: '/profile' },
+    { key: 'settings', label: 'Settings', Icon: Settings, route: '/settings' },
+    { key: 'invite', label: 'Invite Colleagues', Icon: UserPlus, route: '/invite' },
+    ...(profile?.is_affiliate
+      ? ([{ key: 'affiliate', label: 'Affiliate Dashboard', Icon: Sparkles, route: '/affiliate' }] as MenuItem[])
+      : []),
+    { key: 'help', label: 'Help Center', Icon: HelpCircle, route: '/help' },
+    { key: 'signout', label: 'Sign Out', Icon: LogOut, route: null, action: 'signout' },
+  ]
+
+  const handlePress = async (item: MenuItem) => {
     if ('action' in item && item.action === 'signout') {
       await signOut()
       router.replace('/(auth)/sign-up')
